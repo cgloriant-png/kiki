@@ -1,0 +1,6 @@
+{
+  "name": "Paramoteur FFPLUM",
+  "description": "Application d'entraînement et de compétition de paramoteur pour l'analyse, la correction de traces GPS et le calcul des scores selon le barème FFPLUM.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
