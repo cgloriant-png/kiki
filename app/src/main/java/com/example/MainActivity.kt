@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIncomingIntent(intent)
 
         setContent {
             ParamoteurTheme {
@@ -81,7 +82,46 @@ class MainActivity : ComponentActivity() {
                 val tileProvider by viewModel.tileProvider.collectAsStateWithLifecycle()
                 val isCleanMapMode by viewModel.isCleanMapMode.collectAsStateWithLifecycle()
 
+                // GPS Recording state
+                val isRecordingGps by viewModel.isRecordingGps.collectAsStateWithLifecycle()
+                val recordedGpsCount by viewModel.recordedGpsCount.collectAsStateWithLifecycle()
+                val flightDurationSeconds by viewModel.flightDurationSeconds.collectAsStateWithLifecycle()
+                val currentSpeedKmh by viewModel.currentSpeedKmh.collectAsStateWithLifecycle()
+
                 var selectedTab by remember { mutableStateOf(MainTab.COURSE) }
+
+                // Permission Launcher for GPS
+                val locationPermissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+                    val granted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                            permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+                    if (granted) {
+                        viewModel.startGpsRecording(context)
+                        Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Permission GPS requise pour enregistrer le vol", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                fun startFlightGps() {
+                    val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                    if (fineGranted) {
+                        viewModel.startGpsRecording(context)
+                        Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
+                    } else {
+                        locationPermissionLauncher.launch(
+                            arrayOf(
+                                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                android.Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
+                }
 
                 // Activity Launchers for File Import
                 val importGpxLauncher = rememberLauncherForActivityResult(
@@ -253,7 +293,21 @@ class MainActivity : ComponentActivity() {
                                     onVertexDragged = { id, lat, lng -> viewModel.dragVertex(id, lat, lng) }
                                 )
 
-                                ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                Column(modifier = Modifier.align(Alignment.TopCenter)) {
+                                    QuickFlightPanel(
+                                        courseData = courseData,
+                                        isRecordingGps = isRecordingGps,
+                                        recordedGpsCount = recordedGpsCount,
+                                        flightDurationSeconds = flightDurationSeconds,
+                                        currentSpeedKmh = currentSpeedKmh,
+                                        flightResult = flightResult,
+                                        onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
+                                        onStartGpsClick = { startFlightGps() },
+                                        onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze() },
+                                        onResetFlightClick = { viewModel.clearTrace() }
+                                    )
+                                    ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                }
                             }
                         }
                     } else {
@@ -268,7 +322,7 @@ class MainActivity : ComponentActivity() {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1f)
+                                    .weight(1.2f)
                             ) {
                                 MapCanvas(
                                     modifier = Modifier.fillMaxSize(),
@@ -289,7 +343,21 @@ class MainActivity : ComponentActivity() {
                                     onVertexDragged = { id, lat, lng -> viewModel.dragVertex(id, lat, lng) }
                                 )
 
-                                ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                Column(modifier = Modifier.align(Alignment.TopCenter)) {
+                                    QuickFlightPanel(
+                                        courseData = courseData,
+                                        isRecordingGps = isRecordingGps,
+                                        recordedGpsCount = recordedGpsCount,
+                                        flightDurationSeconds = flightDurationSeconds,
+                                        currentSpeedKmh = currentSpeedKmh,
+                                        flightResult = flightResult,
+                                        onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
+                                        onStartGpsClick = { startFlightGps() },
+                                        onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze() },
+                                        onResetFlightClick = { viewModel.clearTrace() }
+                                    )
+                                    ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                }
                             }
 
                             // Lower Half: Tabbed Control Panel
@@ -334,6 +402,34 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        val uri: Uri? = intent?.data ?: intent?.getParcelableExtra(Intent.EXTRA_STREAM)
+        uri?.let { u ->
+            try {
+                contentResolver.openInputStream(u)?.use { stream ->
+                    val content = stream.bufferedReader().readText()
+                    if (content.trim().startsWith("{")) {
+                        viewModel.importCourseJson(content)
+                        Toast.makeText(this, "Épreuve JSON importée avec succès !", Toast.LENGTH_LONG).show()
+                    } else if (content.contains("<gpx", ignoreCase = true)) {
+                        contentResolver.openInputStream(u)?.use { gpxStream ->
+                            viewModel.loadGpxFromStream(gpxStream)
+                            Toast.makeText(this, "Trace GPX importée !", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "Erreur lors de l'ouverture du fichier", Toast.LENGTH_SHORT).show()
             }
         }
     }

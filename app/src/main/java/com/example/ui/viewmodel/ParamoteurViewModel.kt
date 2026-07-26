@@ -78,6 +78,28 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     private val _isCleanMapMode = MutableStateFlow(false)
     val isCleanMapMode: StateFlow<Boolean> = _isCleanMapMode.asStateFlow()
 
+    // GPS Live Recording State
+    private val _isRecordingGps = MutableStateFlow(false)
+    val isRecordingGps: StateFlow<Boolean> = _isRecordingGps.asStateFlow()
+
+    private val _recordedGpsCount = MutableStateFlow(0)
+    val recordedGpsCount: StateFlow<Int> = _recordedGpsCount.asStateFlow()
+
+    private val _flightDurationSeconds = MutableStateFlow(0L)
+    val flightDurationSeconds: StateFlow<Long> = _flightDurationSeconds.asStateFlow()
+
+    private val _currentSpeedKmh = MutableStateFlow(0.0)
+    val currentSpeedKmh: StateFlow<Double> = _currentSpeedKmh.asStateFlow()
+
+    private val _lastGpsLocation = MutableStateFlow<GpxPoint?>(null)
+    val lastGpsLocation: StateFlow<GpxPoint?> = _lastGpsLocation.asStateFlow()
+
+    private var locationManager: android.location.LocationManager? = null
+    private var locationListener: android.location.LocationListener? = null
+    private var flightTimerJob: kotlinx.coroutines.Job? = null
+    private var flightStartTimestampMs: Long = 0L
+    private val recordedPointsList = mutableListOf<GpxPoint>()
+
     private var pointCounter = 0
     private var vertexCounter = 0
     private var competitorCounter = 0
@@ -375,6 +397,102 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         _traceCorrected.value = null
         _conformity.value = null
         _flightResult.value = null
+    }
+
+    // --- GPS Live Recording & Flight Workflow ---
+    fun startGpsRecording(context: android.content.Context) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? android.location.LocationManager
+        recordedPointsList.clear()
+        _traceRaw.value = emptyList()
+        _traceCorrected.value = emptyList()
+        _flightResult.value = null
+        _isRecordingGps.value = true
+        _recordedGpsCount.value = 0
+        _flightDurationSeconds.value = 0L
+        flightStartTimestampMs = System.currentTimeMillis()
+
+        // Timer job for elapsed flight time
+        flightTimerJob?.cancel()
+        flightTimerJob = viewModelScope.launch {
+            while (_isRecordingGps.value) {
+                _flightDurationSeconds.value = (System.currentTimeMillis() - flightStartTimestampMs) / 1000
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+
+        locationListener = android.location.LocationListener { location ->
+            val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else 0.0
+            _currentSpeedKmh.value = speedKmh
+
+            val gpxPt = GpxPoint(
+                lat = location.latitude,
+                lng = location.longitude,
+                ele = if (location.hasAltitude()) location.altitude else null,
+                time = location.time
+            )
+            recordedPointsList.add(gpxPt)
+            _recordedGpsCount.value = recordedPointsList.size
+            _lastGpsLocation.value = gpxPt
+
+            val currentList = recordedPointsList.toList()
+            _traceRaw.value = currentList
+            _traceCorrected.value = currentList
+            recalculateConformity()
+        }
+
+        try {
+            locationManager?.requestLocationUpdates(
+                android.location.LocationManager.GPS_PROVIDER,
+                1000L,
+                2.0f,
+                locationListener!!
+            )
+            if (locationManager?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true) {
+                locationManager?.requestLocationUpdates(
+                    android.location.LocationManager.NETWORK_PROVIDER,
+                    2000L,
+                    5.0f,
+                    locationListener!!
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun stopGpsRecordingAndAnalyze() {
+        locationListener?.let {
+            try {
+                locationManager?.removeUpdates(it)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        locationListener = null
+        flightTimerJob?.cancel()
+        flightTimerJob = null
+        _isRecordingGps.value = false
+
+        if (recordedPointsList.isNotEmpty()) {
+            _traceRaw.value = recordedPointsList.toList()
+            _traceCorrected.value = recordedPointsList.toList()
+
+            // 1. Automatic correction: remove outliers (> 180 km/h) & simplify GPS noise
+            cleanOutliers(180.0)
+            applySimplification(2.5)
+
+            // 2. Automatically evaluate flight score
+            analyzeFlight(EpreuveType.PRECISION, ScoringRef(), emptyMap())
+            saveFlightToHistory()
+        }
     }
 
     // --- Trace GPX Actions ---
