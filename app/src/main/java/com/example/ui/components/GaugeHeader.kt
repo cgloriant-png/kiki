@@ -24,7 +24,9 @@ fun GaugeHeader(
     pointsCount: Int,
     traceDistanceMeters: Double?,
     corridorPct: Int?,
-    flightScore: Int?
+    flightScore: Int?,
+    isCompetitorMode: Boolean = true,
+    onToggleCompetitorMode: (() -> Unit)? = null
 ) {
     Surface(
         color = HighDensityBg,
@@ -43,7 +45,7 @@ fun GaugeHeader(
                 // Header Title & Active Subtitle
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Trace Compétition",
+                        text = if (isCompetitorMode) "Vol Concurrent (Navigation)" else "Trace Compétition (Éditeur)",
                         color = HighDensityHeaderTitle,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -56,10 +58,10 @@ fun GaugeHeader(
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .background(GreenSuccess, CircleShape)
+                                .background(if (isCompetitorMode) GreenSuccess else PrimaryBlue, CircleShape)
                         )
                         Text(
-                            text = if (courseName.isBlank()) "Analyse en cours (FFPLUM v2.4)" else "$courseName (FFPLUM)",
+                            text = if (courseName.isBlank()) "Aucune épreuve chargée" else "Épreuve: $courseName",
                             color = SecondaryText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
@@ -69,18 +71,22 @@ fun GaugeHeader(
                     }
                 }
 
-                // Avatar / Badge
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .background(PrimaryBlueContainer, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "JP",
-                        color = PrimaryBlueDark,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                // Mode Selector Toggle Button
+                onToggleCompetitorMode?.let { toggle ->
+                    FilterChip(
+                        selected = isCompetitorMode,
+                        onClick = toggle,
+                        label = {
+                            Text(
+                                text = if (isCompetitorMode) "MODE CONCURRENT" else "MODE ORGANISATEUR",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = GreenSuccess.copy(alpha = 0.2f),
+                            selectedLabelColor = GreenSuccess
+                        )
                     )
                 }
             }

@@ -284,13 +284,95 @@ fun QuickFlightPanel(
                                 }
 
                                 if (flightResult.results.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    HorizontalDivider(color = BorderOutline, thickness = 1.dp)
                                     Spacer(modifier = Modifier.height(6.dp))
+
                                     Text(
-                                        text = "Portes/Balises validées: ${flightResult.results.count { it.validated }}/${flightResult.results.size}",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = PrimaryBlueDark
+                                        text = "DÉTAIL DES PORTES & PÉNALITÉS",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SecondaryText
                                     )
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    val totalPenalties = flightResult.breakdown?.get("penalties") ?: 0
+                                    val turnBacksCount = flightResult.breakdown?.get("turnBacks") ?: 0
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Portes validées: ${flightResult.results.count { it.validated }}/${flightResult.results.size}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = GreenSuccess
+                                        )
+                                        if (totalPenalties > 0) {
+                                            Text(
+                                                text = "Pénalités: -$totalPenalties pts",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = RedAlert
+                                            )
+                                        }
+                                    }
+
+                                    if (turnBacksCount > 0) {
+                                        Text(
+                                            text = "⚠️ Demi-tours détectés: $turnBacksCount",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = RedAlert
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // List first 6 gate details
+                                    flightResult.results.take(6).forEach { res ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (res.validated) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                                                    contentDescription = null,
+                                                    tint = if (res.validated) GreenSuccess else RedAlert,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Text(
+                                                    text = "${res.point.type.uppercase()} (${res.point.id.take(8)})",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = HighDensityHeaderTitle
+                                                )
+                                            }
+
+                                            Text(
+                                                text = if (res.validated) "Validée (+${res.points ?: 0} pts)" else "Non franchie",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (res.validated) GreenSuccess else RedAlert
+                                            )
+                                        }
+                                    }
+
+                                    if (flightResult.results.size > 6) {
+                                        Text(
+                                            text = "+ ${flightResult.results.size - 6} autres portes...",
+                                            fontSize = 10.sp,
+                                            color = SecondaryText,
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

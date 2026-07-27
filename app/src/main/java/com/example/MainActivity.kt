@@ -88,7 +88,16 @@ class MainActivity : ComponentActivity() {
                 val flightDurationSeconds by viewModel.flightDurationSeconds.collectAsStateWithLifecycle()
                 val currentSpeedKmh by viewModel.currentSpeedKmh.collectAsStateWithLifecycle()
 
+                // Mode Concurrent vs Mode Organisateur
+                var isCompetitorMode by remember { mutableStateOf(true) }
                 var selectedTab by remember { mutableStateOf(MainTab.COURSE) }
+
+                // Automatically force navigate mode in competitor mode
+                LaunchedEffect(isCompetitorMode) {
+                    if (isCompetitorMode) {
+                        viewModel.setToolMode(MapToolMode.NAVIGATE)
+                    }
+                }
 
                 // Permission Launcher for GPS
                 val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -218,7 +227,9 @@ class MainActivity : ComponentActivity() {
                             pointsCount = courseData.points.size,
                             traceDistanceMeters = (traceCorrected ?: traceRaw)?.let { GeometryUtils.totalDistance(it) },
                             corridorPct = conformity?.pctDist ?: conformity?.pctPts,
-                            flightScore = flightResult?.score
+                            flightScore = flightResult?.score,
+                            isCompetitorMode = isCompetitorMode,
+                            onToggleCompetitorMode = { isCompetitorMode = !isCompetitorMode }
                         )
                     }
                 ) { innerPadding ->
@@ -232,44 +243,46 @@ class MainActivity : ComponentActivity() {
                                 .padding(innerPadding)
                                 .background(HighDensityBg)
                         ) {
-                            // Left Side: Control Panel & Tabs
-                            Column(
-                                modifier = Modifier
-                                    .width(380.dp)
-                                    .fillMaxHeight()
-                                    .background(HighDensitySurface)
-                            ) {
-                                TabRowHeader(
-                                    selectedTab = selectedTab,
-                                    onTabSelected = { selectedTab = it }
-                                )
-                                TabContentArea(
-                                    selectedTab = selectedTab,
-                                    courseData = courseData,
-                                    savedCourses = savedCourses,
-                                    currentCourseSlug = currentCourseSlug,
-                                    toolMode = toolMode,
-                                    addPointType = addPointType,
-                                    tileProvider = tileProvider,
-                                    competitionData = competitionData,
-                                    savedCompetitions = savedCompetitions,
-                                    currentCompSlug = currentCompSlug,
-                                    traceRaw = traceRaw,
-                                    traceCorrected = traceCorrected,
-                                    conformity = conformity,
-                                    flightResult = flightResult,
-                                    flightHistory = flightHistory,
-                                    viewModel = viewModel,
-                                    importGpxLauncher = { importGpxLauncher.launch("*/*") },
-                                    importCourseJsonLauncher = { importCourseJsonLauncher.launch("*/*") },
-                                    importCompJsonLauncher = { importCompJsonLauncher.launch("*/*") },
-                                    importCompetitorGpxLauncher = { mancheId, compId ->
-                                        pendingMancheId = mancheId
-                                        pendingCompetitorId = compId
-                                        importCompetitorGpxLauncher.launch("*/*")
-                                    },
-                                    shareTextFile = ::shareTextFile
-                                )
+                            // Left Side: Control Panel & Tabs (Organisateur mode only)
+                            if (!isCompetitorMode) {
+                                Column(
+                                    modifier = Modifier
+                                        .width(380.dp)
+                                        .fillMaxHeight()
+                                        .background(HighDensitySurface)
+                                ) {
+                                    TabRowHeader(
+                                        selectedTab = selectedTab,
+                                        onTabSelected = { selectedTab = it }
+                                    )
+                                    TabContentArea(
+                                        selectedTab = selectedTab,
+                                        courseData = courseData,
+                                        savedCourses = savedCourses,
+                                        currentCourseSlug = currentCourseSlug,
+                                        toolMode = toolMode,
+                                        addPointType = addPointType,
+                                        tileProvider = tileProvider,
+                                        competitionData = competitionData,
+                                        savedCompetitions = savedCompetitions,
+                                        currentCompSlug = currentCompSlug,
+                                        traceRaw = traceRaw,
+                                        traceCorrected = traceCorrected,
+                                        conformity = conformity,
+                                        flightResult = flightResult,
+                                        flightHistory = flightHistory,
+                                        viewModel = viewModel,
+                                        importGpxLauncher = { importGpxLauncher.launch("*/*") },
+                                        importCourseJsonLauncher = { importCourseJsonLauncher.launch("*/*") },
+                                        importCompJsonLauncher = { importCompJsonLauncher.launch("*/*") },
+                                        importCompetitorGpxLauncher = { mancheId, compId ->
+                                            pendingMancheId = mancheId
+                                            pendingCompetitorId = compId
+                                            importCompetitorGpxLauncher.launch("*/*")
+                                        },
+                                        shareTextFile = ::shareTextFile
+                                    )
+                                }
                             }
 
                             // Right Side: Map Canvas
@@ -279,18 +292,18 @@ class MainActivity : ComponentActivity() {
                                     courseData = courseData,
                                     traceRaw = traceRaw,
                                     traceCorrected = traceCorrected,
-                                    toolMode = toolMode,
+                                    toolMode = if (isCompetitorMode) MapToolMode.NAVIGATE else toolMode,
                                     addPointType = addPointType,
                                     tileProvider = tileProvider,
-                                    onPointAdded = { type, lat, lng -> viewModel.addPoint(type, lat, lng) },
-                                    onVertexAdded = { lat, lng -> viewModel.addRouteVertex(lat, lng) },
-                                    onVerticesDrawn = { stroke -> viewModel.addDrawnRouteVertices(stroke) },
-                                    onVertexInserted = { lat, lng -> viewModel.insertVertexNear(lat, lng) },
-                                    onItemDeleted = { lat, lng -> viewModel.deleteNearestItem(lat, lng) },
-                                    onSmoothToggled = { lat, lng -> viewModel.toggleSmoothVertex(lat, lng) },
-                                    onSimulatedFlightDrawn = { stroke -> viewModel.setSimulatedFlightTrace(stroke, 40.0) },
-                                    onPointDragged = { id, lat, lng -> viewModel.dragPoint(id, lat, lng) },
-                                    onVertexDragged = { id, lat, lng -> viewModel.dragVertex(id, lat, lng) }
+                                    onPointAdded = { type, lat, lng -> if (!isCompetitorMode) viewModel.addPoint(type, lat, lng) },
+                                    onVertexAdded = { lat, lng -> if (!isCompetitorMode) viewModel.addRouteVertex(lat, lng) },
+                                    onVerticesDrawn = { stroke -> if (!isCompetitorMode) viewModel.addDrawnRouteVertices(stroke) },
+                                    onVertexInserted = { lat, lng -> if (!isCompetitorMode) viewModel.insertVertexNear(lat, lng) },
+                                    onItemDeleted = { lat, lng -> if (!isCompetitorMode) viewModel.deleteNearestItem(lat, lng) },
+                                    onSmoothToggled = { lat, lng -> if (!isCompetitorMode) viewModel.toggleSmoothVertex(lat, lng) },
+                                    onSimulatedFlightDrawn = { stroke -> if (!isCompetitorMode) viewModel.setSimulatedFlightTrace(stroke, 40.0) },
+                                    onPointDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragPoint(id, lat, lng) },
+                                    onVertexDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragVertex(id, lat, lng) }
                                 )
 
                                 Column(modifier = Modifier.align(Alignment.TopCenter)) {
@@ -306,7 +319,9 @@ class MainActivity : ComponentActivity() {
                                         onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze() },
                                         onResetFlightClick = { viewModel.clearTrace() }
                                     )
-                                    ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                    if (!isCompetitorMode) {
+                                        ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                    }
                                 }
                             }
                         }
@@ -318,29 +333,29 @@ class MainActivity : ComponentActivity() {
                                 .padding(innerPadding)
                                 .background(HighDensityBg)
                         ) {
-                            // Upper Half: Interactive Map Canvas
+                            // Interactive Map Canvas
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1.2f)
+                                    .weight(if (isCompetitorMode) 1f else 1.2f)
                             ) {
                                 MapCanvas(
                                     modifier = Modifier.fillMaxSize(),
                                     courseData = courseData,
                                     traceRaw = traceRaw,
                                     traceCorrected = traceCorrected,
-                                    toolMode = toolMode,
+                                    toolMode = if (isCompetitorMode) MapToolMode.NAVIGATE else toolMode,
                                     addPointType = addPointType,
                                     tileProvider = tileProvider,
-                                    onPointAdded = { type, lat, lng -> viewModel.addPoint(type, lat, lng) },
-                                    onVertexAdded = { lat, lng -> viewModel.addRouteVertex(lat, lng) },
-                                    onVerticesDrawn = { stroke -> viewModel.addDrawnRouteVertices(stroke) },
-                                    onVertexInserted = { lat, lng -> viewModel.insertVertexNear(lat, lng) },
-                                    onItemDeleted = { lat, lng -> viewModel.deleteNearestItem(lat, lng) },
-                                    onSmoothToggled = { lat, lng -> viewModel.toggleSmoothVertex(lat, lng) },
-                                    onSimulatedFlightDrawn = { stroke -> viewModel.setSimulatedFlightTrace(stroke, 40.0) },
-                                    onPointDragged = { id, lat, lng -> viewModel.dragPoint(id, lat, lng) },
-                                    onVertexDragged = { id, lat, lng -> viewModel.dragVertex(id, lat, lng) }
+                                    onPointAdded = { type, lat, lng -> if (!isCompetitorMode) viewModel.addPoint(type, lat, lng) },
+                                    onVertexAdded = { lat, lng -> if (!isCompetitorMode) viewModel.addRouteVertex(lat, lng) },
+                                    onVerticesDrawn = { stroke -> if (!isCompetitorMode) viewModel.addDrawnRouteVertices(stroke) },
+                                    onVertexInserted = { lat, lng -> if (!isCompetitorMode) viewModel.insertVertexNear(lat, lng) },
+                                    onItemDeleted = { lat, lng -> if (!isCompetitorMode) viewModel.deleteNearestItem(lat, lng) },
+                                    onSmoothToggled = { lat, lng -> if (!isCompetitorMode) viewModel.toggleSmoothVertex(lat, lng) },
+                                    onSimulatedFlightDrawn = { stroke -> if (!isCompetitorMode) viewModel.setSimulatedFlightTrace(stroke, 40.0) },
+                                    onPointDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragPoint(id, lat, lng) },
+                                    onVertexDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragVertex(id, lat, lng) }
                                 )
 
                                 Column(modifier = Modifier.align(Alignment.TopCenter)) {
@@ -356,48 +371,52 @@ class MainActivity : ComponentActivity() {
                                         onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze() },
                                         onResetFlightClick = { viewModel.clearTrace() }
                                     )
-                                    ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                    if (!isCompetitorMode) {
+                                        ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
+                                    }
                                 }
                             }
 
-                            // Lower Half: Tabbed Control Panel
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1.1f)
-                                    .background(HighDensitySurface)
-                            ) {
-                                TabRowHeader(
-                                    selectedTab = selectedTab,
-                                    onTabSelected = { selectedTab = it }
-                                )
-                                TabContentArea(
-                                    selectedTab = selectedTab,
-                                    courseData = courseData,
-                                    savedCourses = savedCourses,
-                                    currentCourseSlug = currentCourseSlug,
-                                    toolMode = toolMode,
-                                    addPointType = addPointType,
-                                    tileProvider = tileProvider,
-                                    competitionData = competitionData,
-                                    savedCompetitions = savedCompetitions,
-                                    currentCompSlug = currentCompSlug,
-                                    traceRaw = traceRaw,
-                                    traceCorrected = traceCorrected,
-                                    conformity = conformity,
-                                    flightResult = flightResult,
-                                    flightHistory = flightHistory,
-                                    viewModel = viewModel,
-                                    importGpxLauncher = { importGpxLauncher.launch("*/*") },
-                                    importCourseJsonLauncher = { importCourseJsonLauncher.launch("*/*") },
-                                    importCompJsonLauncher = { importCompJsonLauncher.launch("*/*") },
-                                    importCompetitorGpxLauncher = { mancheId, compId ->
-                                        pendingMancheId = mancheId
-                                        pendingCompetitorId = compId
-                                        importCompetitorGpxLauncher.launch("*/*")
-                                    },
-                                    shareTextFile = ::shareTextFile
-                                )
+                            // Lower Half: Tabbed Control Panel (Shown only in Organisateur mode)
+                            if (!isCompetitorMode) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1.1f)
+                                        .background(HighDensitySurface)
+                                ) {
+                                    TabRowHeader(
+                                        selectedTab = selectedTab,
+                                        onTabSelected = { selectedTab = it }
+                                    )
+                                    TabContentArea(
+                                        selectedTab = selectedTab,
+                                        courseData = courseData,
+                                        savedCourses = savedCourses,
+                                        currentCourseSlug = currentCourseSlug,
+                                        toolMode = toolMode,
+                                        addPointType = addPointType,
+                                        tileProvider = tileProvider,
+                                        competitionData = competitionData,
+                                        savedCompetitions = savedCompetitions,
+                                        currentCompSlug = currentCompSlug,
+                                        traceRaw = traceRaw,
+                                        traceCorrected = traceCorrected,
+                                        conformity = conformity,
+                                        flightResult = flightResult,
+                                        flightHistory = flightHistory,
+                                        viewModel = viewModel,
+                                        importGpxLauncher = { importGpxLauncher.launch("*/*") },
+                                        importCourseJsonLauncher = { importCourseJsonLauncher.launch("*/*") },
+                                        importCompJsonLauncher = { importCompJsonLauncher.launch("*/*") },
+                                        importCompetitorGpxLauncher = { mancheId, compId ->
+                                            pendingMancheId = mancheId
+                                            pendingCompetitorId = compId
+                                            importCompetitorGpxLauncher.launch("*/*")
+                                        },
+                                        shareTextFile = ::shareTextFile
+                                    )
+                                }
                             }
                         }
                     }
