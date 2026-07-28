@@ -110,6 +110,7 @@ data class FlightAnalysisResult(
     val distMeters: Double,
     val durationSeconds: Double?,
     val breakdown: Map<String, Int>? = null,
+    val corridorStats: ConformityStats? = null,
     val error: String? = null
 )
 

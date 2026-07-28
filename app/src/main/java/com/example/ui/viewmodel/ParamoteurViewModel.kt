@@ -72,8 +72,11 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     private val _addPointType = MutableStateFlow("SP")
     val addPointType: StateFlow<String> = _addPointType.asStateFlow()
 
-    private val _tileProvider = MutableStateFlow(MapTileProvider.OSM)
+    private val _tileProvider = MutableStateFlow(MapTileProvider.IGN_PLAN)
     val tileProvider: StateFlow<MapTileProvider> = _tileProvider.asStateFlow()
+
+    private val _declaredTimesMap = MutableStateFlow<Map<String, Double>>(emptyMap())
+    val declaredTimesMap: StateFlow<Map<String, Double>> = _declaredTimesMap.asStateFlow()
 
     private val _isCleanMapMode = MutableStateFlow(false)
     val isCleanMapMode: StateFlow<Boolean> = _isCleanMapMode.asStateFlow()
@@ -490,8 +493,23 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
             applySimplification(2.5)
 
             // 2. Automatically evaluate flight score
-            analyzeFlight(EpreuveType.PRECISION, ScoringRef(), emptyMap())
+            analyzeFlight(EpreuveType.PRECISION, ScoringRef(), _declaredTimesMap.value)
             saveFlightToHistory()
+        }
+    }
+
+    fun setDeclaredTime(pointId: String, seconds: Double) {
+        val updated = _declaredTimesMap.value.toMutableMap()
+        if (seconds <= 0) {
+            updated.remove(pointId)
+        } else {
+            updated[pointId] = seconds
+        }
+        _declaredTimesMap.value = updated
+
+        // Re-analyze if trace already exists
+        if (_traceCorrected.value != null || _traceRaw.value != null) {
+            analyzeFlight(EpreuveType.PRECISION, ScoringRef(), _declaredTimesMap.value)
         }
     }
 

@@ -9,8 +9,10 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,11 +21,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CourseData
 import com.example.data.model.FlightAnalysisResult
+import com.example.data.model.PointValidationResult
 import com.example.ui.theme.*
 import com.example.util.GeometryUtils
 
@@ -39,9 +43,13 @@ fun QuickFlightPanel(
     onStartGpsClick: () -> Unit,
     onStopGpsAndAnalyzeClick: () -> Unit,
     onResetFlightClick: () -> Unit,
+    declaredTimesMap: Map<String, Double> = emptyMap(),
+    onDeclaredTimeChange: ((pointId: String, seconds: Double) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(true) }
+    var showDeclaredTimesSection by remember { mutableStateOf(false) }
+    var showDetailedReportDialog by remember { mutableStateOf(false) }
 
     Surface(
         color = HighDensitySurface,
@@ -185,11 +193,115 @@ fun QuickFlightPanel(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "POSÉ ! (POINTS)",
+                                    text = "POSÉ ! (CORRIGER)",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
+                            }
+                        }
+                    }
+
+                    // Declared Times Section Toggle (for Precision Navigation)
+                    if (!isRecordingGps && courseData.points.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = { showDeclaredTimesSection = !showDeclaredTimesSection },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (declaredTimesMap.isNotEmpty()) PrimaryBlueContainer.copy(alpha = 0.2f) else Color.Transparent
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = PrimaryBlueDark
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (declaredTimesMap.isEmpty()) "⏱️ Entrer mes temps annoncés aux portes" else "⏱️ Temps annoncés (${declaredTimesMap.size} renseignés)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlueDark
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Icon(
+                                imageVector = if (showDeclaredTimesSection) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = SecondaryText
+                            )
+                        }
+
+                        if (showDeclaredTimesSection) {
+                            Surface(
+                                color = HighDensityNavBar,
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BorderOutline),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Temps annoncés par porte (en secondes)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = HighDensityHeaderTitle
+                                    )
+
+                                    val timingPoints = courseData.points.filter { it.type == "tg" || it.type == "SP" || it.type == "FP" || it.type == "porte" }
+                                    val pointsToUse = if (timingPoints.isNotEmpty()) timingPoints else courseData.points
+
+                                    pointsToUse.forEach { pt ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .background(PrimaryBlue, CircleShape)
+                                                )
+                                                Text(
+                                                    text = "${pt.type.uppercase()} (${pt.id.take(8)})",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = HighDensityHeaderTitle
+                                                )
+                                            }
+
+                                            val currentSecs = declaredTimesMap[pt.id] ?: 0.0
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                OutlinedTextField(
+                                                    value = if (currentSecs > 0) "${currentSecs.toInt()}" else "",
+                                                    onValueChange = { inputStr ->
+                                                        val totalSec = inputStr.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
+                                                        onDeclaredTimeChange?.invoke(pt.id, totalSec)
+                                                    },
+                                                    placeholder = { Text("ex: 120", fontSize = 11.sp) },
+                                                    trailingIcon = { Text("s", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText) },
+                                                    singleLine = true,
+                                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                                                    modifier = Modifier.width(95.dp).height(42.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -248,28 +360,40 @@ fun QuickFlightPanel(
                                 ) {
                                     Column {
                                         Text(
-                                            text = "🏆 RÉSULTAT DU VOL",
+                                            text = "🏆 RÉSULTAT DU VOL (COMPÉTITION)",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = PrimaryBlueDark
                                         )
                                         Text(
-                                            text = "Score : ${flightResult.score} points",
-                                            fontSize = 20.sp,
+                                            text = "${flightResult.score} pts",
+                                            fontSize = 24.sp,
                                             fontWeight = FontWeight.ExtraBold,
                                             color = GreenSuccess
                                         )
                                     }
 
-                                    IconButton(
-                                        onClick = onResetFlightClick,
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Effacer la trace",
-                                            tint = SecondaryText
-                                        )
+                                    Row {
+                                        IconButton(
+                                            onClick = { showDetailedReportDialog = true },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Assessment,
+                                                contentDescription = "Détail du vol",
+                                                tint = PrimaryBlue
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = onResetFlightClick,
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = "Effacer la trace",
+                                                tint = SecondaryText
+                                            )
+                                        }
                                     }
                                 }
 
@@ -288,15 +412,8 @@ fun QuickFlightPanel(
                                     HorizontalDivider(color = BorderOutline, thickness = 1.dp)
                                     Spacer(modifier = Modifier.height(6.dp))
 
-                                    Text(
-                                        text = "DÉTAIL DES PORTES & PÉNALITÉS",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = SecondaryText
-                                    )
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
+                                    val validatedCount = flightResult.results.count { it.validated }
+                                    val totalGates = flightResult.results.size
                                     val totalPenalties = flightResult.breakdown?.get("penalties") ?: 0
                                     val turnBacksCount = flightResult.breakdown?.get("turnBacks") ?: 0
 
@@ -305,14 +422,14 @@ fun QuickFlightPanel(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = "Portes validées: ${flightResult.results.count { it.validated }}/${flightResult.results.size}",
+                                            text = "Portes validées : $validatedCount/$totalGates",
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
+                                            fontWeight = FontWeight.Bold,
                                             color = GreenSuccess
                                         )
                                         if (totalPenalties > 0) {
                                             Text(
-                                                text = "Pénalités: -$totalPenalties pts",
+                                                text = "Pénalités : -$totalPenalties pts",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = RedAlert
@@ -322,55 +439,73 @@ fun QuickFlightPanel(
 
                                     if (turnBacksCount > 0) {
                                         Text(
-                                            text = "⚠️ Demi-tours détectés: $turnBacksCount",
+                                            text = "⚠️ Demi-tours dans le couloir: $turnBacksCount",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium,
                                             color = RedAlert
                                         )
                                     }
 
-                                    Spacer(modifier = Modifier.height(6.dp))
-
-                                    // List first 6 gate details
-                                    flightResult.results.take(6).forEach { res ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
+                                    flightResult.corridorStats?.let { stats ->
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Surface(
+                                            color = PrimaryBlueContainer.copy(alpha = 0.5f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Icon(
-                                                    imageVector = if (res.validated) Icons.Default.CheckCircle else Icons.Default.Cancel,
-                                                    contentDescription = null,
-                                                    tint = if (res.validated) GreenSuccess else RedAlert,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.AltRoute,
+                                                        contentDescription = null,
+                                                        tint = PrimaryBlueDark,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Text(
+                                                        text = "Présence couloir :",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = HighDensityHeaderTitle
+                                                    )
+                                                }
                                                 Text(
-                                                    text = "${res.point.type.uppercase()} (${res.point.id.take(8)})",
+                                                    text = "${stats.pctDist ?: stats.pctPts}% de la trace (${stats.pctTime ?: stats.pctPts}% temps)",
                                                     fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = HighDensityHeaderTitle
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = GreenSuccess
                                                 )
                                             }
-
-                                            Text(
-                                                text = if (res.validated) "Validée (+${res.points ?: 0} pts)" else "Non franchie",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (res.validated) GreenSuccess else RedAlert
-                                            )
                                         }
                                     }
 
-                                    if (flightResult.results.size > 6) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Button(
+                                        onClick = { showDetailedReportDialog = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ListAlt,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "+ ${flightResult.results.size - 6} autres portes...",
-                                            fontSize = 10.sp,
-                                            color = SecondaryText,
-                                            modifier = Modifier.padding(top = 2.dp)
+                                            text = "VOIR LE DÉTAIL PORTE PAR PORTE",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
                                         )
                                     }
                                 }
@@ -380,6 +515,272 @@ fun QuickFlightPanel(
                 }
             }
         }
+    }
+
+    // Detailed Gate-By-Gate Flight Results Dialog
+    if (showDetailedReportDialog && flightResult != null) {
+        AlertDialog(
+            onDismissRequest = { showDetailedReportDialog = false },
+            confirmButton = {
+                Button(
+                    onClick = { showDetailedReportDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                ) {
+                    Text("FERMER", fontWeight = FontWeight.Bold)
+                }
+            },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EmojiEvents,
+                        contentDescription = null,
+                        tint = GreenSuccess
+                    )
+                    Text(
+                        text = "Résultat Détaillé du Vol",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = HighDensityHeaderTitle
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Total Score Summary Box
+                    Surface(
+                        color = PrimaryBlueContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "SCORE TOTAL OBTENU",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryBlueDark
+                                )
+                                Text(
+                                    text = "${flightResult.score} pts",
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = GreenSuccess
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                val durStr = flightResult.durationSeconds?.let { formatTime(it.toLong()) } ?: "--"
+                                Text(text = "Durée: $durStr", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = HighDensityHeaderTitle)
+                                val distKm = flightResult.distMeters?.let { "%.2f km".format(it / 1000.0) } ?: "--"
+                                Text(text = "Distance: $distKm", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = HighDensityHeaderTitle)
+                            }
+                        }
+                    }
+
+                    // Corridor Conformity Box
+                    flightResult.corridorStats?.let { stats ->
+                        Surface(
+                            color = HighDensityNavBar,
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderOutline),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AltRoute,
+                                        contentDescription = null,
+                                        tint = PrimaryBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "POURCENTAGE DANS LE COULOIR",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = HighDensityHeaderTitle
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceAround
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = "Distance", fontSize = 10.sp, color = SecondaryText)
+                                        Text(text = "${stats.pctDist ?: "--"}%", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = GreenSuccess)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = "Temps de vol", fontSize = 10.sp, color = SecondaryText)
+                                        Text(text = "${stats.pctTime ?: "--"}%", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = GreenSuccess)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(text = "Points GPS", fontSize = 10.sp, color = SecondaryText)
+                                        Text(text = "${stats.pctPts}%", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = GreenSuccess)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Breakdown Score Categories
+                    flightResult.breakdown?.let { bd ->
+                        if (bd.isNotEmpty()) {
+                            Text(
+                                text = "RÉPARTITION DU SCORE :",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = HighDensityHeaderTitle
+                            )
+                            bd.forEach { (cat, pts) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(text = cat, fontSize = 12.sp, color = SecondaryText)
+                                    Text(
+                                        text = "$pts pts",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (pts < 0) RedAlert else GreenSuccess
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = BorderOutline, thickness = 1.dp)
+                        }
+                    }
+
+                    // Gate-by-Gate Table Header
+                    Text(
+                        text = "DÉTAIL PORTE PAR PORTE :",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = HighDensityHeaderTitle
+                    )
+
+                    flightResult.results.forEachIndexed { idx, res ->
+                        GateResultCard(index = idx + 1, result = res)
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun GateResultCard(index: Int, result: PointValidationResult) {
+    Surface(
+        color = HighDensityNavBar,
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (result.validated) GreenSuccess.copy(alpha = 0.5f) else RedAlert.copy(alpha = 0.5f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (result.validated) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                        contentDescription = null,
+                        tint = if (result.validated) GreenSuccess else RedAlert,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "$index. ${result.point.type.uppercase()} (${result.point.id.take(8)})",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = HighDensityHeaderTitle
+                    )
+                }
+
+                Text(
+                    text = if (result.validated) "VALIDÉE" else "NON FRANCHIE",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (result.validated) GreenSuccess else RedAlert
+                )
+            }
+
+            if (result.validated) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val declText = result.declaredS?.let { "${it.toInt()}s (${fmtSecToMinSec(it)})" } ?: "--"
+                    val actText = result.actualS?.let { "${it.toInt()}s (${fmtSecToMinSec(it)})" } ?: "--"
+                    val ecartText = result.ecartS?.let { "%.1fs".format(it) } ?: "--"
+
+                    Column {
+                        Text(text = "Annoncé: $declText", fontSize = 11.sp, color = SecondaryText)
+                        Text(text = "Réalisé: $actText", fontSize = 11.sp, color = HighDensityHeaderTitle, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(text = "Écart: $ecartText", fontSize = 11.sp, color = SecondaryText)
+                        Text(
+                            text = "Points: +${result.points ?: 0} pts",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GreenSuccess
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun fmtSecToMinSec(seconds: Double): String {
+    val totalSec = seconds.toInt()
+    val mins = totalSec / 60
+    val secs = totalSec % 60
+    return "%02dm %02ds".format(mins, secs)
+}
+
+private fun parseMinutesSecondsToSec(input: String): Double {
+    val clean = input.trim()
+    if (clean.isBlank()) return 0.0
+    return if (clean.contains(":")) {
+        val parts = clean.split(":")
+        val m = parts.getOrNull(0)?.toDoubleOrNull() ?: 0.0
+        val s = parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0
+        m * 60 + s
+    } else {
+        clean.toDoubleOrNull() ?: 0.0
     }
 }
 

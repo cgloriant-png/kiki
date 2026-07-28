@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.*
@@ -118,7 +119,8 @@ fun MapCanvas(
     onSmoothToggled: (Double, Double) -> Unit,
     onSimulatedFlightDrawn: (List<LatLng>) -> Unit,
     onPointDragged: (String, Double, Double) -> Unit,
-    onVertexDragged: (String, Double, Double) -> Unit
+    onVertexDragged: (String, Double, Double) -> Unit,
+    onTileProviderChanged: ((MapTileProvider) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -530,13 +532,51 @@ fun MapCanvas(
             }
         }
 
-        // Floating Map Controls (Zoom +, Zoom -, Recenter)
+        // Floating Map Controls (Layers, Zoom +, Zoom -, Recenter)
+        var tileMenuExpanded by remember { mutableStateOf(false) }
+
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Box {
+                FloatingActionButton(
+                    onClick = { tileMenuExpanded = true },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .border(1.dp, if (tileProvider == MapTileProvider.IGN_PLAN) GreenSuccess else BorderOutline, CircleShape),
+                    containerColor = HighDensitySurface,
+                    contentColor = if (tileProvider == MapTileProvider.IGN_PLAN) GreenSuccess else PrimaryBlue,
+                    elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                ) {
+                    Icon(Icons.Default.Layers, contentDescription = "Fond de carte")
+                }
+
+                DropdownMenu(
+                    expanded = tileMenuExpanded,
+                    onDismissRequest = { tileMenuExpanded = false }
+                ) {
+                    MapTileProvider.entries.forEach { provider ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (provider == MapTileProvider.IGN_PLAN) "🇫🇷 ${provider.label} (Conseillé)" else provider.label,
+                                    fontWeight = if (provider == tileProvider) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 12.sp,
+                                    color = if (provider == tileProvider) GreenSuccess else HighDensityHeaderTitle
+                                )
+                            },
+                            onClick = {
+                                tileMenuExpanded = false
+                                onTileProviderChanged?.invoke(provider)
+                            }
+                        )
+                    }
+                }
+            }
+
             FloatingActionButton(
                 onClick = { zoomLevel = (zoomLevel + 0.5f).coerceAtMost(18f) },
                 modifier = Modifier

@@ -87,15 +87,17 @@ class MainActivity : ComponentActivity() {
                 val recordedGpsCount by viewModel.recordedGpsCount.collectAsStateWithLifecycle()
                 val flightDurationSeconds by viewModel.flightDurationSeconds.collectAsStateWithLifecycle()
                 val currentSpeedKmh by viewModel.currentSpeedKmh.collectAsStateWithLifecycle()
+                val declaredTimesMap by viewModel.declaredTimesMap.collectAsStateWithLifecycle()
 
                 // Mode Concurrent vs Mode Organisateur
                 var isCompetitorMode by remember { mutableStateOf(true) }
                 var selectedTab by remember { mutableStateOf(MainTab.COURSE) }
 
-                // Automatically force navigate mode in competitor mode
+                // Automatically force navigate mode and IGN Classic map in competitor mode
                 LaunchedEffect(isCompetitorMode) {
                     if (isCompetitorMode) {
                         viewModel.setToolMode(MapToolMode.NAVIGATE)
+                        viewModel.setTileProvider(MapTileProvider.IGN_PLAN)
                     }
                 }
 
@@ -303,7 +305,8 @@ class MainActivity : ComponentActivity() {
                                     onSmoothToggled = { lat, lng -> if (!isCompetitorMode) viewModel.toggleSmoothVertex(lat, lng) },
                                     onSimulatedFlightDrawn = { stroke -> if (!isCompetitorMode) viewModel.setSimulatedFlightTrace(stroke, 40.0) },
                                     onPointDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragPoint(id, lat, lng) },
-                                    onVertexDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragVertex(id, lat, lng) }
+                                    onVertexDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragVertex(id, lat, lng) },
+                                    onTileProviderChanged = { provider -> viewModel.setTileProvider(provider) }
                                 )
 
                                 Column(modifier = Modifier.align(Alignment.TopCenter)) {
@@ -317,7 +320,9 @@ class MainActivity : ComponentActivity() {
                                         onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
                                         onStartGpsClick = { startFlightGps() },
                                         onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze() },
-                                        onResetFlightClick = { viewModel.clearTrace() }
+                                        onResetFlightClick = { viewModel.clearTrace() },
+                                        declaredTimesMap = declaredTimesMap,
+                                        onDeclaredTimeChange = { ptId, sec -> viewModel.setDeclaredTime(ptId, sec) }
                                     )
                                     if (!isCompetitorMode) {
                                         ToolModeBanner(toolMode = toolMode, addPointType = addPointType)
@@ -355,7 +360,8 @@ class MainActivity : ComponentActivity() {
                                     onSmoothToggled = { lat, lng -> if (!isCompetitorMode) viewModel.toggleSmoothVertex(lat, lng) },
                                     onSimulatedFlightDrawn = { stroke -> if (!isCompetitorMode) viewModel.setSimulatedFlightTrace(stroke, 40.0) },
                                     onPointDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragPoint(id, lat, lng) },
-                                    onVertexDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragVertex(id, lat, lng) }
+                                    onVertexDragged = { id, lat, lng -> if (!isCompetitorMode) viewModel.dragVertex(id, lat, lng) },
+                                    onTileProviderChanged = { provider -> viewModel.setTileProvider(provider) }
                                 )
 
                                 Column(modifier = Modifier.align(Alignment.TopCenter)) {
@@ -369,7 +375,9 @@ class MainActivity : ComponentActivity() {
                                         onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
                                         onStartGpsClick = { startFlightGps() },
                                         onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze() },
-                                        onResetFlightClick = { viewModel.clearTrace() }
+                                        onResetFlightClick = { viewModel.clearTrace() },
+                                        declaredTimesMap = declaredTimesMap,
+                                        onDeclaredTimeChange = { ptId, sec -> viewModel.setDeclaredTime(ptId, sec) }
                                     )
                                     if (!isCompetitorMode) {
                                         ToolModeBanner(toolMode = toolMode, addPointType = addPointType)

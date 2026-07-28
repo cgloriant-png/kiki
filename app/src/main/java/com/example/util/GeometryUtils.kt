@@ -592,6 +592,7 @@ object GeometryUtils {
             bannerTxt = mandatoryMsg + bannerTxt
         }
 
+        val confStats = conformity(courseData, trace)
         val finalScore = max(0, min(1000, score.roundToInt()))
 
         return FlightAnalysisResult(
@@ -601,7 +602,8 @@ object GeometryUtils {
             results = results,
             distMeters = dist,
             durationSeconds = dur,
-            breakdown = breakdown
+            breakdown = breakdown,
+            corridorStats = confStats
         )
     }
 
