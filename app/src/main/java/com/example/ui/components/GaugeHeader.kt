@@ -1,12 +1,14 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -18,16 +20,22 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.theme.*
 import com.example.util.GeometryUtils
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GaugeHeader(
     courseName: String,
+    savedCourses: List<Pair<String, String>>,
+    currentCourseSlug: String?,
+    onSelectCourse: (slug: String) -> Unit,
+    onDeleteCourse: (slug: String) -> Unit,
+    onImportJsonClick: () -> Unit,
     pointsCount: Int,
     traceDistanceMeters: Double?,
     corridorPct: Int?,
-    flightScore: Int?,
-    isCompetitorMode: Boolean = true,
-    onToggleCompetitorMode: (() -> Unit)? = null
+    flightScore: Int?
 ) {
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
     Surface(
         color = HighDensityBg,
         modifier = Modifier.fillMaxWidth()
@@ -35,65 +43,208 @@ fun GaugeHeader(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)
+                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 8.dp)
         ) {
+            // Header Bar with Dropdown Selector for Saved Courses
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Header Title & Active Subtitle
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isCompetitorMode) "Vol Concurrent (Navigation)" else "Trace Compétition (Éditeur)",
-                        color = HighDensityHeaderTitle,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(top = 2.dp)
+                // Dropdown / Active Course Selector Box
+                Box(modifier = Modifier.weight(1f)) {
+                    Surface(
+                        color = HighDensitySurface,
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { dropdownExpanded = true }
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(if (isCompetitorMode) GreenSuccess else PrimaryBlue, CircleShape)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(GreenSuccess, CircleShape)
+                                )
+                                Column {
+                                    Text(
+                                        text = "ÉPREUVE SÉLECTIONNÉE :",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SecondaryText
+                                    )
+                                    Text(
+                                        text = if (courseName.isBlank()) "Cliquer pour choisir / importer une épreuve" else courseName,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = HighDensityHeaderTitle,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Sélecteur d'épreuves",
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    // Dropdown Menu Listing Saved Courses
+                    DropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false },
+                        modifier = Modifier
+                            .width(320.dp)
+                            .background(HighDensitySurface)
+                    ) {
                         Text(
-                            text = if (courseName.isBlank()) "Aucune épreuve chargée" else "Épreuve: $courseName",
-                            color = SecondaryText,
+                            text = "📌 Mes Épreuves Enregistrées (${savedCourses.size})",
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            fontWeight = FontWeight.ExtraBold,
+                            color = PrimaryBlueDark,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                        HorizontalDivider(color = BorderOutline, thickness = 1.dp)
+
+                        if (savedCourses.isEmpty()) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Aucune épreuve enregistrée",
+                                        fontSize = 12.sp,
+                                        color = SecondaryText
+                                    )
+                                },
+                                onClick = { }
+                            )
+                        } else {
+                            savedCourses.forEach { (slug, name) ->
+                                val isSelected = currentCourseSlug == slug
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.GolfCourse,
+                                                    contentDescription = null,
+                                                    tint = if (isSelected) GreenSuccess else SecondaryText,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Text(
+                                                    text = name,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isSelected) GreenSuccess else HighDensityHeaderTitle,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    onDeleteCourse(slug)
+                                                    dropdownExpanded = false
+                                                },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.DeleteOutline,
+                                                    contentDescription = "Supprimer épreuve",
+                                                    tint = RedAlert,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        onSelectCourse(slug)
+                                        dropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(color = BorderOutline, thickness = 1.dp)
+
+                        // Action: Import new JSON
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = PrimaryBlue,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "Ouvrir / Importer nouveau JSON",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryBlue
+                                    )
+                                }
+                            },
+                            onClick = {
+                                dropdownExpanded = false
+                                onImportJsonClick()
+                            }
                         )
                     }
                 }
 
-                // Mode Selector Toggle Button
-                onToggleCompetitorMode?.let { toggle ->
-                    FilterChip(
-                        selected = isCompetitorMode,
-                        onClick = toggle,
-                        label = {
-                            Text(
-                                text = if (isCompetitorMode) "MODE CONCURRENT" else "MODE ORGANISATEUR",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = GreenSuccess.copy(alpha = 0.2f),
-                            selectedLabelColor = GreenSuccess
-                        )
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Import JSON Quick Button
+                Button(
+                    onClick = onImportJsonClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = "Ouvrir",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "JSON",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // High Density Gauges Grid
+            // Gauges Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -101,7 +252,7 @@ fun GaugeHeader(
             ) {
                 GaugeCell(
                     value = pointsCount.toString(),
-                    label = "POINTS",
+                    label = "PORTES/BALISES",
                     valueColor = PrimaryBlue,
                     modifier = Modifier.weight(1f)
                 )
@@ -125,7 +276,7 @@ fun GaugeHeader(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             HorizontalDivider(color = BorderOutline, thickness = 1.dp)
         }
     }
@@ -140,20 +291,20 @@ private fun GaugeCell(
 ) {
     Surface(
         color = HighDensitySurface,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderOutline),
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = label,
                 color = SecondaryText,
-                fontSize = 9.sp,
+                fontSize = 8.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
+                letterSpacing = 0.3.sp
             )
             Text(
                 text = value,
@@ -167,4 +318,3 @@ private fun GaugeCell(
         }
     }
 }
-

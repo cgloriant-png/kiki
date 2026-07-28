@@ -585,12 +585,51 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
 
     fun saveFlightToHistory() {
         val res = _flightResult.value ?: return
-        val slug = _currentCourseSlug.value ?: return
-        val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date())
+        val slug = _currentCourseSlug.value ?: GeometryUtils.slugify(_courseData.value.name)
+        val trace = _traceCorrected.value ?: _traceRaw.value ?: emptyList()
+        val isoDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+
+        val resultJson = JsonExportUtils.serializeFlightResult(res)
+        val traceJson = if (trace.isNotEmpty()) JsonExportUtils.serializeTrace(trace) else null
 
         viewModelScope.launch {
-            repository.addHistoryItem(slug, res.label, res.score, isoDate)
+            // Ensure course is saved in DB if not already
+            repository.saveCourse(_courseData.value, slug)
+            _currentCourseSlug.value = slug
+
+            repository.addHistoryItem(
+                slug = slug,
+                epreuveType = res.label.ifBlank { "Analyse Vol" },
+                score = res.score,
+                dateIso = isoDate,
+                resultJson = resultJson,
+                traceJson = traceJson
+            )
             loadHistoryForCurrentCourse(slug)
+        }
+    }
+
+    fun loadHistoryFlight(item: FlightHistoryEntity) {
+        if (!item.resultJson.isNullOrBlank()) {
+            try {
+                val res = JsonExportUtils.deserializeFlightResult(item.resultJson)
+                _flightResult.value = res
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        if (!item.traceJson.isNullOrBlank()) {
+            try {
+                val trace = JsonExportUtils.deserializeTrace(item.traceJson)
+                _traceRaw.value = trace
+                _traceCorrected.value = trace
+                recalculateConformity()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    fun deleteHistoryFlight(id: Long) {
+        viewModelScope.launch {
+            repository.deleteHistoryById(id)
+            _currentCourseSlug.value?.let { loadHistoryForCurrentCourse(it) }
         }
     }
 
@@ -721,9 +760,16 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     fun exportCourseJson(): String = JsonExportUtils.serializeCourse(_courseData.value)
     fun importCourseJson(jsonStr: String) {
         val imported = JsonExportUtils.deserializeCourse(jsonStr)
-        _courseData.value = imported
-        _currentCourseSlug.value = null
-        recalculateConformity()
+        if (imported.name.isBlank()) imported.name = "Parcours Importé"
+        viewModelScope.launch {
+            val slug = repository.saveCourse(imported, null)
+            _courseData.value = imported
+            _currentCourseSlug.value = slug
+            pointCounter = imported.points.size
+            vertexCounter = imported.routeVertices.size
+            recalculateConformity()
+            loadHistoryForCurrentCourse(slug)
+        }
     }
 
     fun exportCompetitionJson(): String = JsonExportUtils.serializeCompetition(_competitionData.value)

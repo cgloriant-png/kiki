@@ -57,13 +57,26 @@ class ParamoteurRepository(private val dao: ParamoteurDao) {
         return dao.getHistoryForCourse(slug)
     }
 
-    suspend fun addHistoryItem(slug: String, epreuveType: String, score: Int, dateIso: String) {
+    suspend fun addHistoryItem(
+        slug: String,
+        epreuveType: String,
+        score: Int,
+        dateIso: String,
+        resultJson: String? = null,
+        traceJson: String? = null
+    ) {
         val entity = FlightHistoryEntity(
             courseSlug = slug,
             dateIso = dateIso,
             epreuveType = epreuveType,
-            score = score
+            score = score,
+            resultJson = resultJson,
+            traceJson = traceJson
         )
         dao.insertHistory(entity)
+    }
+
+    suspend fun deleteHistoryById(id: Long) {
+        dao.deleteHistoryById(id)
     }
 }

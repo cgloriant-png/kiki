@@ -10,7 +10,7 @@ import com.example.data.model.FlightHistoryEntity
 
 @Database(
     entities = [CourseEntity::class, CompetitionEntity::class, FlightHistoryEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

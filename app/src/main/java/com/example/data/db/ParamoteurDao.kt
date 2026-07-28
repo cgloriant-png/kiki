@@ -40,4 +40,7 @@ interface ParamoteurDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHistory(item: FlightHistoryEntity)
+
+    @Query("DELETE FROM flight_history WHERE id = :id")
+    suspend fun deleteHistoryById(id: Long)
 }

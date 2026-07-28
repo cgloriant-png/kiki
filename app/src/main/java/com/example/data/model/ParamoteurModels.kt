@@ -182,5 +182,7 @@ data class FlightHistoryEntity(
     val courseSlug: String,
     val dateIso: String,
     val epreuveType: String,
-    val score: Int
+    val score: Int,
+    val resultJson: String? = null,
+    val traceJson: String? = null
 )

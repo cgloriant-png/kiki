@@ -1,6 +1,5 @@
 package com.example.ui.components
 
-import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -21,28 +20,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CourseData
 import com.example.data.model.FlightAnalysisResult
+import com.example.data.model.FlightHistoryEntity
 import com.example.data.model.PointValidationResult
 import com.example.ui.theme.*
-import com.example.util.GeometryUtils
 
 @Composable
 fun QuickFlightPanel(
     courseData: CourseData,
+    savedCourses: List<Pair<String, String>>,
+    currentCourseSlug: String?,
+    onSelectCourse: (slug: String) -> Unit,
+    onDeleteCourse: (slug: String) -> Unit,
     isRecordingGps: Boolean,
     recordedGpsCount: Int,
     flightDurationSeconds: Long,
     currentSpeedKmh: Double,
     flightResult: FlightAnalysisResult?,
+    flightHistory: List<FlightHistoryEntity>,
     onImportJsonClick: () -> Unit,
     onStartGpsClick: () -> Unit,
     onStopGpsAndAnalyzeClick: () -> Unit,
     onResetFlightClick: () -> Unit,
+    onLoadHistoryItem: (FlightHistoryEntity) -> Unit,
+    onDeleteHistoryItem: (Long) -> Unit,
     declaredTimesMap: Map<String, Double> = emptyMap(),
     onDeclaredTimeChange: ((pointId: String, seconds: Double) -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -50,6 +55,7 @@ fun QuickFlightPanel(
     var expanded by remember { mutableStateOf(true) }
     var showDeclaredTimesSection by remember { mutableStateOf(false) }
     var showDetailedReportDialog by remember { mutableStateOf(false) }
+    var showHistorySection by remember { mutableStateOf(true) }
 
     Surface(
         color = HighDensitySurface,
@@ -58,7 +64,7 @@ fun QuickFlightPanel(
         shadowElevation = 4.dp,
         modifier = modifier
             .fillMaxWidth()
-            .padding(12.dp)
+            .padding(10.dp)
     ) {
         Column(
             modifier = Modifier
@@ -94,13 +100,13 @@ fun QuickFlightPanel(
 
                     Column {
                         Text(
-                            text = if (isRecordingGps) "VOL EN COURS (GPS...)" else "Épreuve de Précision",
+                            text = if (isRecordingGps) "VOL EN COURS (GPS ENREGISTREMENT...)" else "Régulateur Vol & Correction",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = HighDensityHeaderTitle
                         )
                         Text(
-                            text = if (courseData.name.isBlank()) "Aucun parcours chargé" else "Épreuve: ${courseData.name} (${courseData.points.size} portes/balises)",
+                            text = if (courseData.name.isBlank()) "Aucune épreuve sélectionnée" else "Épreuve: ${courseData.name} (${courseData.points.size} portes)",
                             fontSize = 11.sp,
                             color = SecondaryText
                         )
@@ -132,13 +138,13 @@ fun QuickFlightPanel(
                 ) {
                     HorizontalDivider(color = BorderOutline, thickness = 1.dp)
 
-                    // Actions Bar: 1. Import JSON, 2. Start/Stop Flight GPS
+                    // Main Action Buttons Row: Open JSON / Start Flight GPS / Stop & Correct
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Import JSON Button
+                        // Open JSON Button
                         OutlinedButton(
                             onClick = onImportJsonClick,
                             shape = RoundedCornerShape(12.dp),
@@ -152,13 +158,13 @@ fun QuickFlightPanel(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "Ouvrir JSON",
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1
                             )
                         }
 
-                        // Main Flight GPS Recording Button
+                        // Flight GPS Control Button
                         if (!isRecordingGps) {
                             Button(
                                 onClick = onStartGpsClick,
@@ -202,7 +208,7 @@ fun QuickFlightPanel(
                         }
                     }
 
-                    // Declared Times Section Toggle (for Precision Navigation)
+                    // Declared Times Toggle (for precision epreuves)
                     if (!isRecordingGps && courseData.points.isNotEmpty()) {
                         OutlinedButton(
                             onClick = { showDeclaredTimesSection = !showDeclaredTimesSection },
@@ -282,23 +288,18 @@ fun QuickFlightPanel(
 
                                             val currentSecs = declaredTimesMap[pt.id] ?: 0.0
 
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                OutlinedTextField(
-                                                    value = if (currentSecs > 0) "${currentSecs.toInt()}" else "",
-                                                    onValueChange = { inputStr ->
-                                                        val totalSec = inputStr.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
-                                                        onDeclaredTimeChange?.invoke(pt.id, totalSec)
-                                                    },
-                                                    placeholder = { Text("ex: 120", fontSize = 11.sp) },
-                                                    trailingIcon = { Text("s", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText) },
-                                                    singleLine = true,
-                                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
-                                                    modifier = Modifier.width(95.dp).height(42.dp)
-                                                )
-                                            }
+                                            OutlinedTextField(
+                                                value = if (currentSecs > 0) "${currentSecs.toInt()}" else "",
+                                                onValueChange = { inputStr ->
+                                                    val totalSec = inputStr.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
+                                                    onDeclaredTimeChange?.invoke(pt.id, totalSec)
+                                                },
+                                                placeholder = { Text("ex: 120", fontSize = 11.sp) },
+                                                trailingIcon = { Text("s", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText) },
+                                                singleLine = true,
+                                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                                                modifier = Modifier.width(95.dp).height(42.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -306,7 +307,7 @@ fun QuickFlightPanel(
                         }
                     }
 
-                    // Live Flight Stats Panel
+                    // Live GPS Recording Telemetry
                     if (isRecordingGps) {
                         Surface(
                             color = RedAlert.copy(alpha = 0.08f),
@@ -340,7 +341,7 @@ fun QuickFlightPanel(
                         }
                     }
 
-                    // Result Banner when flight is finished & calculated
+                    // Flight Result Banner & Breakdown
                     if (!isRecordingGps && flightResult != null) {
                         Surface(
                             color = PrimaryBlueContainer.copy(alpha = 0.3f),
@@ -360,7 +361,7 @@ fun QuickFlightPanel(
                                 ) {
                                     Column {
                                         Text(
-                                            text = "🏆 RÉSULTAT DU VOL (COMPÉTITION)",
+                                            text = "🏆 CORRECTION & SCORE DU VOL",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = PrimaryBlueDark
@@ -408,14 +409,13 @@ fun QuickFlightPanel(
                                 }
 
                                 if (flightResult.results.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     HorizontalDivider(color = BorderOutline, thickness = 1.dp)
                                     Spacer(modifier = Modifier.height(6.dp))
 
                                     val validatedCount = flightResult.results.count { it.validated }
                                     val totalGates = flightResult.results.size
                                     val totalPenalties = flightResult.breakdown?.get("penalties") ?: 0
-                                    val turnBacksCount = flightResult.breakdown?.get("turnBacks") ?: 0
 
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -435,15 +435,6 @@ fun QuickFlightPanel(
                                                 color = RedAlert
                                             )
                                         }
-                                    }
-
-                                    if (turnBacksCount > 0) {
-                                        Text(
-                                            text = "⚠️ Demi-tours dans le couloir: $turnBacksCount",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = RedAlert
-                                        )
                                     }
 
                                     flightResult.corridorStats?.let { stats ->
@@ -478,7 +469,7 @@ fun QuickFlightPanel(
                                                     )
                                                 }
                                                 Text(
-                                                    text = "${stats.pctDist ?: stats.pctPts}% de la trace (${stats.pctTime ?: stats.pctPts}% temps)",
+                                                    text = "${stats.pctDist ?: stats.pctPts}% de la trace",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.ExtraBold,
                                                     color = GreenSuccess
@@ -507,6 +498,126 @@ fun QuickFlightPanel(
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White
                                         )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Saved History / Corrections Section
+                    if (!isRecordingGps && flightHistory.isNotEmpty()) {
+                        Surface(
+                            color = HighDensityNavBar,
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderOutline),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.History,
+                                            contentDescription = null,
+                                            tint = PrimaryBlueDark,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "📋 CORRECTIONS & VOLS ENREGISTRÉS (${flightHistory.size})",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = HighDensityHeaderTitle
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { showHistorySection = !showHistorySection },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (showHistorySection) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                            contentDescription = null,
+                                            tint = SecondaryText,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                if (showHistorySection) {
+                                    flightHistory.forEach { item ->
+                                        Surface(
+                                            color = HighDensitySurface,
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderOutline),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = "Score: ${item.score} pts",
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = GreenSuccess
+                                                    )
+                                                    Text(
+                                                        text = "${item.dateIso} - ${item.epreuveType}",
+                                                        fontSize = 10.sp,
+                                                        color = SecondaryText
+                                                    )
+                                                }
+
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    // Load / View on map
+                                                    OutlinedButton(
+                                                        onClick = { onLoadHistoryItem(item) },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Visibility,
+                                                            contentDescription = "Voir",
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Voir", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    // Delete correction to re-fly
+                                                    IconButton(
+                                                        onClick = { onDeleteHistoryItem(item.id) },
+                                                        modifier = Modifier.size(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.DeleteOutline,
+                                                            contentDescription = "Supprimer correction",
+                                                            tint = RedAlert,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -769,19 +880,6 @@ private fun fmtSecToMinSec(seconds: Double): String {
     val mins = totalSec / 60
     val secs = totalSec % 60
     return "%02dm %02ds".format(mins, secs)
-}
-
-private fun parseMinutesSecondsToSec(input: String): Double {
-    val clean = input.trim()
-    if (clean.isBlank()) return 0.0
-    return if (clean.contains(":")) {
-        val parts = clean.split(":")
-        val m = parts.getOrNull(0)?.toDoubleOrNull() ?: 0.0
-        val s = parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0
-        m * 60 + s
-    } else {
-        clean.toDoubleOrNull() ?: 0.0
-    }
 }
 
 @Composable

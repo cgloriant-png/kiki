@@ -252,4 +252,140 @@ object JsonExportUtils {
         }
         return sb.toString()
     }
+
+    fun serializeFlightResult(res: FlightAnalysisResult): String {
+        val root = JSONObject()
+        root.put("score", res.score)
+        root.put("label", res.label)
+        root.put("bannerTxt", res.bannerTxt)
+        root.put("distMeters", res.distMeters)
+        root.put("durationSeconds", res.durationSeconds ?: JSONObject.NULL)
+        if (res.corridorStats != null) {
+            val cs = JSONObject()
+            cs.put("pctPts", res.corridorStats.pctPts)
+            cs.put("pctDist", res.corridorStats.pctDist ?: JSONObject.NULL)
+            cs.put("pctTime", res.corridorStats.pctTime ?: JSONObject.NULL)
+            root.put("corridorStats", cs)
+        }
+        if (res.breakdown != null) {
+            val bd = JSONObject()
+            res.breakdown.forEach { (k, v) -> bd.put(k, v) }
+            root.put("breakdown", bd)
+        }
+        val resArr = JSONArray()
+        res.results.forEach { g ->
+            val gObj = JSONObject()
+            g.point.let { p ->
+                val pObj = JSONObject()
+                pObj.put("id", p.id)
+                pObj.put("type", p.type)
+                pObj.put("lat", p.lat)
+                pObj.put("lng", p.lng)
+                pObj.put("radius", p.radius)
+                pObj.put("width", p.width)
+                gObj.put("point", pObj)
+            }
+            gObj.put("validated", g.validated)
+            gObj.put("declaredS", g.declaredS ?: JSONObject.NULL)
+            gObj.put("actualS", g.actualS ?: JSONObject.NULL)
+            gObj.put("ecartS", g.ecartS ?: JSONObject.NULL)
+            gObj.put("points", g.points ?: JSONObject.NULL)
+            resArr.put(gObj)
+        }
+        root.put("results", resArr)
+        return root.toString()
+    }
+
+    fun deserializeFlightResult(jsonStr: String): FlightAnalysisResult {
+        val root = JSONObject(jsonStr)
+        val score = root.getInt("score")
+        val label = root.optString("label", "")
+        val bannerTxt = root.optString("bannerTxt", "")
+        val distMeters = root.optDouble("distMeters", 0.0)
+        val durationSeconds = if (root.isNull("durationSeconds")) null else root.optDouble("durationSeconds")
+
+        var corridorStats: ConformityStats? = null
+        val csObj = root.optJSONObject("corridorStats")
+        if (csObj != null) {
+            corridorStats = ConformityStats(
+                pctPts = csObj.optInt("pctPts", 0),
+                pctDist = if (csObj.isNull("pctDist")) null else csObj.optInt("pctDist"),
+                pctTime = if (csObj.isNull("pctTime")) null else csObj.optInt("pctTime")
+            )
+        }
+
+        val breakdownMap = mutableMapOf<String, Int>()
+        val bdObj = root.optJSONObject("breakdown")
+        if (bdObj != null) {
+            bdObj.keys().forEach { k -> breakdownMap[k] = bdObj.getInt(k) }
+        }
+
+        val resultsList = mutableListOf<PointValidationResult>()
+        val resArr = root.optJSONArray("results")
+        if (resArr != null) {
+            for (i in 0 until resArr.length()) {
+                val gObj = resArr.getJSONObject(i)
+                val pObj = gObj.getJSONObject("point")
+                val pt = CoursePoint(
+                    id = pObj.optString("id", "p$i"),
+                    type = pObj.optString("type", "balise"),
+                    lat = pObj.getDouble("lat"),
+                    lng = pObj.getDouble("lng"),
+                    radius = pObj.optDouble("radius", 100.0),
+                    width = pObj.optDouble("width", 150.0)
+                )
+                resultsList.add(
+                    PointValidationResult(
+                        point = pt,
+                        validated = gObj.optBoolean("validated", false),
+                        declaredS = if (gObj.isNull("declaredS")) null else gObj.optDouble("declaredS"),
+                        actualS = if (gObj.isNull("actualS")) null else gObj.optDouble("actualS"),
+                        ecartS = if (gObj.isNull("ecartS")) null else gObj.optDouble("ecartS"),
+                        points = if (gObj.isNull("points")) null else gObj.optInt("points")
+                    )
+                )
+            }
+        }
+
+        return FlightAnalysisResult(
+            score = score,
+            label = label,
+            bannerTxt = bannerTxt,
+            results = resultsList,
+            distMeters = distMeters,
+            durationSeconds = durationSeconds,
+            breakdown = if (breakdownMap.isNotEmpty()) breakdownMap else null,
+            corridorStats = corridorStats
+        )
+    }
+
+    fun serializeTrace(points: List<GpxPoint>): String {
+        val arr = JSONArray()
+        points.forEach { p ->
+            val obj = JSONObject()
+            obj.put("lat", p.lat)
+            obj.put("lng", p.lng)
+            if (p.ele != null) obj.put("ele", p.ele)
+            if (p.time != null) obj.put("time", p.time)
+            arr.put(obj)
+        }
+        return arr.toString()
+    }
+
+    fun deserializeTrace(jsonStr: String): List<GpxPoint> {
+        val list = mutableListOf<GpxPoint>()
+        val arr = JSONArray(jsonStr)
+        for (i in 0 until arr.length()) {
+            val obj = arr.getJSONObject(i)
+            list.add(
+                GpxPoint(
+                    lat = obj.getDouble("lat"),
+                    lng = obj.getDouble("lng"),
+                    ele = if (obj.has("ele") && !obj.isNull("ele")) obj.getDouble("ele") else null,
+                    time = if (obj.has("time") && !obj.isNull("time")) obj.getLong("time") else null
+                )
+            )
+        }
+        return list
+    }
 }
