@@ -146,6 +146,7 @@ fun MapCanvas(
     var simStroke by remember { mutableStateOf<List<LatLng>>(emptyList()) }
     var draggedPointId by remember { mutableStateOf<String?>(null) }
     var draggedVertexId by remember { mutableStateOf<String?>(null) }
+    var isDraggingPoint by remember { mutableStateOf(false) }
 
     val loadedTiles = remember { mutableStateMapOf<String, ImageBitmap>() }
 
@@ -184,21 +185,66 @@ fun MapCanvas(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(toolMode, zoomLevel, centerLat, centerLng) {
+                .pointerInput(toolMode) {
                     if (toolMode == MapToolMode.NAVIGATE) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            val newZoom = (zoomLevel * zoom).coerceIn(4f, 18f)
-                            zoomLevel = newZoom
+                        try {
+                            detectTransformGestures { centroid, pan, zoom, _ ->
+                                if (zoom != 1f) {
+                                    zoomLevel = (zoomLevel * zoom).coerceIn(4f, 18f)
+                                }
+                                if (pan != Offset.Zero) {
+                                    val touchRadiusPx = with(density) { 36.dp.toPx() }
 
-                            val currentCenterScreen = Offset(canvasSize.width / 2f, canvasSize.height / 2f)
-                            val targetCenterScreen = currentCenterScreen - pan
-                            val newCenter = screenToLatLng(targetCenterScreen)
-                            centerLat = newCenter.lat
-                            centerLng = newCenter.lng
+                                    if (draggedPointId == null && draggedVertexId == null && !isDraggingPoint) {
+                                        var closestPtId: String? = null
+                                        var closestVertId: String? = null
+                                        var minDist = touchRadiusPx
+
+                                        courseData.points.forEach { p ->
+                                            val pScreen = latLngToScreen(p.lat, p.lng)
+                                            val d = hypot(pScreen.x - (centroid.x - pan.x), pScreen.y - (centroid.y - pan.y))
+                                            if (d < minDist) {
+                                                minDist = d
+                                                closestPtId = p.id
+                                            }
+                                        }
+
+                                        if (closestPtId == null) {
+                                            courseData.routeVertices.forEach { v ->
+                                                val vScreen = latLngToScreen(v.lat, v.lng)
+                                                val d = hypot(vScreen.x - (centroid.x - pan.x), vScreen.y - (centroid.y - pan.y))
+                                                if (d < minDist) {
+                                                    minDist = d
+                                                    closestVertId = v.id
+                                                }
+                                            }
+                                        }
+
+                                        draggedPointId = closestPtId
+                                        draggedVertexId = closestVertId
+                                        isDraggingPoint = (closestPtId != null || closestVertId != null)
+                                    }
+
+                                    if (draggedPointId != null || draggedVertexId != null) {
+                                        val latLng = screenToLatLng(centroid)
+                                        draggedPointId?.let { id -> onPointDragged(id, latLng.lat, latLng.lng) }
+                                        draggedVertexId?.let { id -> onVertexDragged(id, latLng.lat, latLng.lng) }
+                                    } else {
+                                        val targetCenterScreen = Offset(canvasSize.width / 2f - pan.x, canvasSize.height / 2f - pan.y)
+                                        val newCenter = screenToLatLng(targetCenterScreen)
+                                        centerLat = newCenter.lat
+                                        centerLng = newCenter.lng
+                                    }
+                                }
+                            }
+                        } finally {
+                            draggedPointId = null
+                            draggedVertexId = null
+                            isDraggingPoint = false
                         }
                     }
                 }
-                .pointerInput(toolMode, zoomLevel, centerLat, centerLng) {
+                .pointerInput(toolMode) {
                     detectTapGestures { offset ->
                         val latLng = screenToLatLng(offset)
                         when (toolMode) {
@@ -211,44 +257,14 @@ fun MapCanvas(
                         }
                     }
                 }
-                .pointerInput(toolMode, zoomLevel, centerLat, centerLng) {
-                    if (toolMode == MapToolMode.DRAW_ROUTE || toolMode == MapToolMode.SIMULATE_FLIGHT || toolMode == MapToolMode.NAVIGATE) {
+                .pointerInput(toolMode) {
+                    if (toolMode == MapToolMode.DRAW_ROUTE || toolMode == MapToolMode.SIMULATE_FLIGHT) {
                         detectDragGestures(
                             onDragStart = { offset ->
                                 val latLng = screenToLatLng(offset)
                                 when (toolMode) {
                                     MapToolMode.DRAW_ROUTE -> freehandStroke = listOf(latLng)
                                     MapToolMode.SIMULATE_FLIGHT -> simStroke = listOf(latLng)
-                                    MapToolMode.NAVIGATE -> {
-                                        // Check if near a gate or vertex to start dragging
-                                        val origin = GeometryUtils.courseOrigin(courseData)
-                                        val clickLocal = GeometryUtils.toXY(latLng, origin)
-                                        var closestPtId: String? = null
-                                        var closestVertId: String? = null
-                                        var minDist = 250.0
-
-                                        courseData.points.forEach { p ->
-                                            val pLocal = GeometryUtils.toXY(LatLng(p.lat, p.lng), origin)
-                                            val d = hypot(pLocal.x - clickLocal.x, pLocal.y - clickLocal.y)
-                                            if (d < minDist) {
-                                                minDist = d
-                                                closestPtId = p.id
-                                            }
-                                        }
-
-                                        courseData.routeVertices.forEach { v ->
-                                            val vLocal = GeometryUtils.toXY(LatLng(v.lat, v.lng), origin)
-                                            val d = hypot(vLocal.x - clickLocal.x, vLocal.y - clickLocal.y)
-                                            if (d < minDist) {
-                                                minDist = d
-                                                closestVertId = v.id
-                                                closestPtId = null
-                                            }
-                                        }
-
-                                        draggedPointId = closestPtId
-                                        draggedVertexId = closestVertId
-                                    }
                                     else -> {}
                                 }
                             },
@@ -264,14 +280,6 @@ fun MapCanvas(
                                     MapToolMode.SIMULATE_FLIGHT -> {
                                         if (simStroke.isEmpty() || GeometryUtils.haversine(simStroke.last(), latLng) > 8) {
                                             simStroke = simStroke + latLng
-                                        }
-                                    }
-                                    MapToolMode.NAVIGATE -> {
-                                        draggedPointId?.let { id ->
-                                            onPointDragged(id, latLng.lat, latLng.lng)
-                                        }
-                                        draggedVertexId?.let { id ->
-                                            onVertexDragged(id, latLng.lat, latLng.lng)
                                         }
                                     }
                                     else -> {}
@@ -290,10 +298,6 @@ fun MapCanvas(
                                             onSimulatedFlightDrawn(simStroke)
                                         }
                                         simStroke = emptyList()
-                                    }
-                                    MapToolMode.NAVIGATE -> {
-                                        draggedPointId = null
-                                        draggedVertexId = null
                                     }
                                     else -> {}
                                 }
@@ -537,19 +541,20 @@ fun MapCanvas(
 
         Column(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .align(Alignment.CenterEnd)
+                .padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box {
                 FloatingActionButton(
                     onClick = { tileMenuExpanded = true },
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .border(1.dp, if (tileProvider == MapTileProvider.IGN_PLAN) GreenSuccess else BorderOutline, CircleShape),
                     containerColor = HighDensitySurface,
                     contentColor = if (tileProvider == MapTileProvider.IGN_PLAN) GreenSuccess else PrimaryBlue,
-                    elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                    elevation = FloatingActionButtonDefaults.elevation(4.dp)
                 ) {
                     Icon(Icons.Default.Layers, contentDescription = "Fond de carte")
                 }
@@ -580,22 +585,22 @@ fun MapCanvas(
             FloatingActionButton(
                 onClick = { zoomLevel = (zoomLevel + 0.5f).coerceAtMost(18f) },
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .border(1.dp, BorderOutline, CircleShape),
                 containerColor = HighDensitySurface,
                 contentColor = PrimaryBlue,
-                elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                elevation = FloatingActionButtonDefaults.elevation(4.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Zoom +")
             }
             FloatingActionButton(
                 onClick = { zoomLevel = (zoomLevel - 0.5f).coerceAtLeast(4f) },
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .border(1.dp, BorderOutline, CircleShape),
                 containerColor = HighDensitySurface,
                 contentColor = PrimaryBlue,
-                elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                elevation = FloatingActionButtonDefaults.elevation(4.dp)
             ) {
                 Icon(Icons.Default.Remove, contentDescription = "Zoom -")
             }
@@ -607,11 +612,11 @@ fun MapCanvas(
                     zoomLevel = 12f
                 },
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .border(1.dp, BorderOutline, CircleShape),
                 containerColor = HighDensitySurface,
                 contentColor = PrimaryBlue,
-                elevation = FloatingActionButtonDefaults.elevation(2.dp)
+                elevation = FloatingActionButtonDefaults.elevation(4.dp)
             ) {
                 Icon(Icons.Default.MyLocation, contentDescription = "Recentrer")
             }
