@@ -484,17 +484,33 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         flightTimerJob = null
         _isRecordingGps.value = false
 
-        if (recordedPointsList.isNotEmpty()) {
-            _traceRaw.value = recordedPointsList.toList()
-            _traceCorrected.value = recordedPointsList.toList()
+        val pointsToAnalyze = if (recordedPointsList.isNotEmpty()) {
+            recordedPointsList.toList()
+        } else {
+            _traceCorrected.value ?: _traceRaw.value ?: emptyList()
+        }
 
-            // 1. Automatic correction: remove outliers (> 180 km/h) & simplify GPS noise
-            cleanOutliers(180.0)
-            applySimplification(2.5)
+        if (pointsToAnalyze.isNotEmpty()) {
+            _traceRaw.value = pointsToAnalyze
+            _traceCorrected.value = pointsToAnalyze
 
-            // 2. Automatically evaluate flight score
+            if (pointsToAnalyze.size > 5) {
+                cleanOutliers(180.0)
+                applySimplification(1.5)
+            }
+
             analyzeFlight(EpreuveType.PRECISION, ScoringRef(), _declaredTimesMap.value)
             saveFlightToHistory()
+        } else {
+            _flightResult.value = FlightAnalysisResult(
+                score = 0,
+                label = "Aucune trace",
+                bannerTxt = "⚠ Aucun point GPS n'a été enregistré pendant le vol. Assurez-vous que la géolocalisation GPS est activée.",
+                results = emptyList(),
+                distMeters = 0.0,
+                durationSeconds = null,
+                error = "Aucun point GPS enregistré."
+            )
         }
     }
 

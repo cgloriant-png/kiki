@@ -178,14 +178,17 @@ object GeometryUtils {
     }
 
     fun removeOutliers(points: List<GpxPoint>, maxKmh: Double): List<GpxPoint> {
-        if (points.size < 3 || points[0].time == null) return points.toList()
+        if (points.size < 3) return points.toList()
         val result = mutableListOf(points[0])
         for (i in 1 until points.size) {
             val prev = result.last()
             val cur = points[i]
             if (prev.time != null && cur.time != null) {
                 val dt = (cur.time - prev.time) / 1000.0
-                if (dt <= 0) continue
+                if (dt <= 0) {
+                    result.add(cur)
+                    continue
+                }
                 val speed = (haversine(prev.lat, prev.lng, cur.lat, cur.lng) / dt) * 3.6
                 if (speed > maxKmh) continue
             }
@@ -230,7 +233,7 @@ object GeometryUtils {
         return emptyList()
     }
 
-    fun courseLengthKm(courseData: CourseData): Double {
+    fun courseTotalLengthKm(courseData: CourseData): Double {
         val origin = courseOrigin(courseData)
         val cl = centerlineDenseGeo(courseData, origin)
         if (cl.size < 2) return 0.0
@@ -241,15 +244,19 @@ object GeometryUtils {
         return d / 1000.0
     }
 
+    fun courseLengthKm(courseData: CourseData): Double = courseTotalLengthKm(courseData)
+
     data class GateFrame(val dir: Point2D, val perp: Point2D, val local: Point2D)
 
     fun gateFrameFor(p: CoursePoint, courseData: CourseData, origin: LatLng): GateFrame {
         val pLocal = toXY(LatLng(p.lat, p.lng), origin)
         val routeVerts = courseData.routeVertices
 
-        if ((p.type == "SP" || p.type == "FP") && routeVerts.size >= 2) {
-            val a = if (p.type == "SP") routeVerts[0] else routeVerts[routeVerts.size - 2]
-            val b = if (p.type == "SP") routeVerts[1] else routeVerts.last()
+        val isSpOrFp = p.type.equals("SP", true) || p.type.equals("FP", true)
+        if (isSpOrFp && routeVerts.size >= 2) {
+            val isSp = p.type.equals("SP", true)
+            val a = if (isSp) routeVerts[0] else routeVerts[routeVerts.size - 2]
+            val b = if (isSp) routeVerts[1] else routeVerts.last()
             val aXy = toXY(LatLng(a.lat, a.lng), origin)
             val bXy = toXY(LatLng(b.lat, b.lng), origin)
             val dx = bXy.x - aXy.x
@@ -315,8 +322,9 @@ object GeometryUtils {
         courseData.points.forEach { p ->
             var foundIdx: Int? = null
             val pLocal = toXY(LatLng(p.lat, p.lng), origin)
+            val isCircle = p.type.equals("balise", true) || p.type.equals("cachee", true)
 
-            if (p.type == "balise" || p.type == "cachee") {
+            if (isCircle) {
                 for (i in pointer until traceLocal.size) {
                     if (hypot(traceLocal[i].x - pLocal.x, traceLocal[i].y - pLocal.y) <= p.radius) {
                         foundIdx = i
@@ -325,20 +333,30 @@ object GeometryUtils {
                 }
             } else {
                 val frame = gateFrameFor(p, courseData, origin)
+                val halfWidth = (p.width / 2.0).coerceAtLeast(30.0)
+
                 for (i in max(pointer, 1) until traceLocal.size) {
                     val a = traceLocal[i - 1]
                     val b = traceLocal[i]
                     val dA = (a.x - frame.local.x) * frame.dir.x + (a.y - frame.local.y) * frame.dir.y
                     val dB = (b.x - frame.local.x) * frame.dir.x + (b.y - frame.local.y) * frame.dir.y
 
-                    if (dA < 0 && dB >= 0) {
-                        val t = dA / (dA - dB)
+                    val crossed = (dA < 0 && dB >= 0) || (dA >= 0 && dB <= 0)
+                    if (crossed) {
+                        val denominator = (dA - dB)
+                        val t = if (abs(denominator) > 1e-6) dA / denominator else 0.5
                         val xCross = Point2D(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
                         val offset = (xCross.x - frame.local.x) * frame.perp.x + (xCross.y - frame.local.y) * frame.perp.y
-                        if (abs(offset) <= p.width / 2.0) {
+                        if (abs(offset) <= halfWidth) {
                             foundIdx = i
                             break
                         }
+                    }
+
+                    val distToCenter = hypot(b.x - pLocal.x, b.y - pLocal.y)
+                    if (distToCenter <= halfWidth) {
+                        foundIdx = i
+                        break
                     }
                 }
             }
@@ -479,7 +497,7 @@ object GeometryUtils {
                 bannerTxt = "Balises validées : $nbp/${cand.size} (Nbmax=${nbmax.toInt()}).$penTxt"
             }
             EpreuveType.SNAKE -> {
-                val hidden = results.filter { it.point.type == "porte" }
+                val hidden = results.filter { it.point.type.equals("porte", true) || it.point.type.equals("tg", true) }
                 val hCount = hidden.count { it.validated }
                 val nh = hidden.size.coerceAtLeast(1)
                 val qh = 400.0 * (hCount.toDouble() / nh)
@@ -494,14 +512,21 @@ object GeometryUtils {
                 bannerTxt = "Portes franchies : $hCount/${hidden.size}.$sTxt"
             }
             EpreuveType.PRECISION -> {
-                val hidden = results.filter { it.point.type == "porte" }
+                val hidden = results.filter { 
+                    val t = it.point.type.lowercase()
+                    t == "porte" || t == "tg" || t == "balise" || t == "cachee"
+                }
                 val tc = hidden.count { it.validated }
                 val ntc = hidden.size.coerceAtLeast(1)
                 val gatesRatio = if (hidden.isNotEmpty()) tc.toDouble() / ntc else 0.0
 
-                val tgResults = results.filter { it.point.type == "tg" }
-                val sp = results.find { it.point.type == "SP" }
-                val spTime = if (sp != null && sp.validated) sp.time else trace.firstOrNull()?.time
+                val tgResults = results.filter { 
+                    val t = it.point.type.lowercase()
+                    val id = it.point.id.lowercase()
+                    t != "sp" && id != "sp" && t != "fp" && id != "fp"
+                }
+                val sp = results.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
+                val spTime = if (sp != null && sp.validated && sp.time != null) sp.time else trace.firstOrNull()?.time
 
                 var sumH = 0.0
                 tgResults.forEach { r ->
@@ -509,8 +534,8 @@ object GeometryUtils {
                     r.declaredS = declared
                     if (r.validated && declared != null && declared >= 0 && spTime != null && r.time != null) {
                         val actual = (r.time - spTime) / 1000.0
-                        val ei = min(180.0, max(5.0, abs(declared - actual)))
-                        val hi = 180.0 - ei
+                        val ei = min(180.0, max(0.0, abs(declared - actual)))
+                        val hi = max(0.0, 180.0 - ei)
                         r.actualS = actual
                         r.ecartS = actual - declared
                         r.hi = hi
@@ -554,7 +579,7 @@ object GeometryUtils {
                     "Couloir" to couloirPts
                 )
                 label = "Navigation précision — barème (portes ${wGates.toInt()} + temps ${wTime.toInt()} + vitesse ${wSpeed.toInt()} + couloir ${wCouloir.toInt()})"
-                bannerTxt = "Portes cachées : $tc/${hidden.size}. TG déclarées : ${tgResults.size}.$sTxt" +
+                bannerTxt = "Portes franchies : $tc/${hidden.size}. Portes mesurées : ${tgResults.size}.$sTxt" +
                         if (conf?.pctDist != null) " · Couloir : ${conf.pctDist}%" else ""
             }
             EpreuveType.ECO_DIST -> {
@@ -573,8 +598,8 @@ object GeometryUtils {
         }
 
         val pen = courseData.penalties
-        val spResult = results.find { it.point.type == "SP" }
-        val fpResult = results.find { it.point.type == "FP" }
+        val spResult = results.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
+        val fpResult = results.find { it.point.type.equals("FP", true) || it.point.id.equals("FP", true) }
         var mandatoryMsg = ""
 
         if (pen.requireSP && spResult != null && !spResult.validated) {
