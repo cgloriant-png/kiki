@@ -260,8 +260,16 @@ fun QuickFlightPanel(
                                         color = HighDensityHeaderTitle
                                     )
 
-                                    val timingPoints = courseData.points.filter { it.type == "tg" || it.type == "SP" || it.type == "FP" || it.type == "porte" }
-                                    val pointsToUse = if (timingPoints.isNotEmpty()) timingPoints else courseData.points
+                                    val timingPoints = courseData.points.filter { 
+                                        val t = it.type.lowercase()
+                                        val id = it.id.lowercase()
+                                        t != "sp" && id != "sp" && (t == "tg" || t == "fp" || t == "porte" || t == "balise")
+                                    }
+                                    val pointsToUse = (if (timingPoints.isNotEmpty()) timingPoints else courseData.points).filter {
+                                        val t = it.type.lowercase()
+                                        val id = it.id.lowercase()
+                                        t != "sp" && id != "sp"
+                                    }
 
                                     pointsToUse.forEach { pt ->
                                         Row(
