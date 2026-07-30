@@ -58,7 +58,7 @@ enum class MapTileProvider(val label: String, val urlTemplate: String, val maxZo
 }
 
 class TileCache(private val cacheDir: File) {
-    private val memoryCache = mutableMapOf<String, ImageBitmap>()
+    private val memoryCache = java.util.Collections.synchronizedMap(mutableMapOf<String, ImageBitmap>())
 
     suspend fun getTile(url: String): ImageBitmap? {
         memoryCache[url]?.let { return it }
@@ -68,7 +68,12 @@ class TileCache(private val cacheDir: File) {
 
         if (diskFile.exists()) {
             val bitmap = withContext(Dispatchers.IO) {
-                BitmapFactory.decodeFile(diskFile.absolutePath)
+                try {
+                    BitmapFactory.decodeFile(diskFile.absolutePath)
+                } catch (e: Exception) {
+                    diskFile.delete()
+                    null
+                }
             }
             if (bitmap != null) {
                 val imageBitmap = bitmap.asImageBitmap()
@@ -79,21 +84,26 @@ class TileCache(private val cacheDir: File) {
 
         return withContext(Dispatchers.IO) {
             try {
-                val connection = URL(url).openConnection()
-                connection.connectTimeout = 3000
-                connection.readTimeout = 3000
-                val inputStream = connection.getInputStream()
-                val bytes = inputStream.readBytes()
-                inputStream.close()
-                diskFile.writeBytes(bytes)
-
-                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                if (bitmap != null) {
-                    val imageBitmap = bitmap.asImageBitmap()
-                    synchronized(memoryCache) {
-                        memoryCache[url] = imageBitmap
-                    }
-                    imageBitmap
+                val connection = (URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    setRequestProperty("User-Agent", "ParamoteurScoring/1.0 (Android; Mobile; Paramoteur)")
+                    setRequestProperty("Accept", "image/png,image/jpeg,image/*;q=0.8")
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+                val responseCode = connection.responseCode
+                if (responseCode == 200) {
+                    val inputStream = connection.inputStream
+                    val bytes = inputStream.readBytes()
+                    inputStream.close()
+                    if (bytes.isNotEmpty()) {
+                        diskFile.writeBytes(bytes)
+                        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        if (bitmap != null) {
+                            val imageBitmap = bitmap.asImageBitmap()
+                            memoryCache[url] = imageBitmap
+                            imageBitmap
+                        } else null
+                    } else null
                 } else null
             } catch (e: Exception) {
                 null
@@ -149,6 +159,7 @@ fun MapCanvas(
     var isDraggingPoint by remember { mutableStateOf(false) }
 
     val loadedTiles = remember { mutableStateMapOf<String, ImageBitmap>() }
+    val pendingTiles = remember { mutableSetOf<String>() }
 
     // Coordinate conversion functions
     fun latLngToScreen(lat: Double, lng: Double): Offset {
@@ -344,10 +355,17 @@ fun MapCanvas(
                             dstSize = androidx.compose.ui.unit.IntSize(256, 256)
                         )
                     } else {
-                        coroutineScope.launch {
-                            val tileBitmap = tileCache.getTile(tileUrl)
-                            if (tileBitmap != null) {
-                                loadedTiles[tileUrl] = tileBitmap
+                        if (!pendingTiles.contains(tileUrl)) {
+                            pendingTiles.add(tileUrl)
+                            coroutineScope.launch {
+                                try {
+                                    val tileBitmap = tileCache.getTile(tileUrl)
+                                    if (tileBitmap != null) {
+                                        loadedTiles[tileUrl] = tileBitmap
+                                    }
+                                } finally {
+                                    pendingTiles.remove(tileUrl)
+                                }
                             }
                         }
                     }

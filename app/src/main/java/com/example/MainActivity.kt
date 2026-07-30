@@ -10,14 +10,24 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.*
 import com.example.ui.theme.*
@@ -114,6 +124,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var selectedTab by remember { mutableIntStateOf(0) }
+
                 Scaffold(
                     modifier = Modifier
                         .fillMaxSize()
@@ -139,35 +151,47 @@ class MainActivity : ComponentActivity() {
                             .padding(innerPadding)
                             .background(HighDensityBg)
                     ) {
-                        // Main Interactive Map Canvas
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
+                        // Navigation Tabs (1. Données & Vol / 2. Carte Plein Écran)
+                        TabRow(
+                            selectedTabIndex = selectedTab,
+                            containerColor = HighDensitySurface,
+                            contentColor = PrimaryBlueDark
                         ) {
-                            MapCanvas(
-                                modifier = Modifier.fillMaxSize(),
-                                courseData = courseData,
-                                traceRaw = traceRaw,
-                                traceCorrected = traceCorrected,
-                                toolMode = MapToolMode.NAVIGATE,
-                                addPointType = "balise",
-                                tileProvider = tileProvider,
-                                onPointAdded = { _, _, _ -> },
-                                onVertexAdded = { _, _ -> },
-                                onVerticesDrawn = { _ -> },
-                                onVertexInserted = { _, _ -> },
-                                onItemDeleted = { _, _ -> },
-                                onSmoothToggled = { _, _ -> },
-                                onSimulatedFlightDrawn = { _ -> },
-                                onPointDragged = { _, _, _ -> },
-                                onVertexDragged = { _, _, _ -> },
-                                onTileProviderChanged = { provider -> viewModel.setTileProvider(provider) }
+                            Tab(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Assignment, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("1. Données & Vol", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
                             )
+                            Tab(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Text("2. Carte Plein Écran", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            )
+                        }
 
-                            // Quick Flight Control & Correction Panel Overlay
+                        if (selectedTab == 0) {
+                            // PAGE 1: Données, Réglages et Commandes de Vol
                             Column(
-                                modifier = Modifier.align(Alignment.TopCenter)
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(bottom = 16.dp)
                             ) {
                                 QuickFlightPanel(
                                     courseData = courseData,
@@ -188,8 +212,115 @@ class MainActivity : ComponentActivity() {
                                     onLoadHistoryItem = { item -> viewModel.loadHistoryFlight(item) },
                                     onDeleteHistoryItem = { id -> viewModel.deleteHistoryFlight(id) },
                                     declaredTimesMap = declaredTimesMap,
-                                    onDeclaredTimeChange = { ptId, sec -> viewModel.setDeclaredTime(ptId, sec) }
+                                    onDeclaredTimeChange = { ptId, sec -> viewModel.setDeclaredTime(ptId, sec) },
+                                    onSwitchToMapClick = { selectedTab = 1 }
                                 )
+                            }
+                        } else {
+                            // PAGE 2: Carte Plein Écran sans aucun masque
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                            ) {
+                                MapCanvas(
+                                    modifier = Modifier.fillMaxSize(),
+                                    courseData = courseData,
+                                    traceRaw = traceRaw,
+                                    traceCorrected = traceCorrected,
+                                    toolMode = MapToolMode.NAVIGATE,
+                                    addPointType = "balise",
+                                    tileProvider = tileProvider,
+                                    onPointAdded = { _, _, _ -> },
+                                    onVertexAdded = { _, _ -> },
+                                    onVerticesDrawn = { _ -> },
+                                    onVertexInserted = { _, _ -> },
+                                    onItemDeleted = { _, _ -> },
+                                    onSmoothToggled = { _, _ -> },
+                                    onSimulatedFlightDrawn = { _ -> },
+                                    onPointDragged = { _, _, _ -> },
+                                    onVertexDragged = { _, _, _ -> },
+                                    onTileProviderChanged = { provider -> viewModel.setTileProvider(provider) }
+                                )
+
+                                // Non-intrusive floating status bar over map
+                                Surface(
+                                    color = HighDensitySurface.copy(alpha = 0.92f),
+                                    shape = RoundedCornerShape(20.dp),
+                                    shadowElevation = 6.dp,
+                                    border = BorderStroke(1.dp, PrimaryBlueContainer),
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        if (isRecordingGps) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(10.dp)
+                                                    .background(RedAlert, CircleShape)
+                                            )
+                                            val min = flightDurationSeconds / 60
+                                            val sec = flightDurationSeconds % 60
+                                            Text(
+                                                text = String.format("%02d:%02d • %.0f km/h (%d pts)", min, sec, currentSpeedKmh, recordedGpsCount),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = HighDensityHeaderTitle
+                                            )
+                                            Button(
+                                                onClick = { viewModel.stopGpsRecordingAndAnalyze() },
+                                                colors = ButtonDefaults.buttonColors(containerColor = RedAlert),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                shape = RoundedCornerShape(10.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Text("STOP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(10.dp)
+                                                    .background(GreenSuccess, CircleShape)
+                                            )
+                                            Text(
+                                                text = if (courseData.name.isBlank()) "Carte Libre" else "Épreuve: ${courseData.name}",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = HighDensityHeaderTitle,
+                                                maxLines = 1
+                                            )
+                                            Button(
+                                                onClick = { startFlightGps() },
+                                                colors = ButtonDefaults.buttonColors(containerColor = GreenSuccess),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                shape = RoundedCornerShape(10.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Text("DÉBUTER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
+                                        }
+
+                                        VerticalDivider(modifier = Modifier.height(18.dp), color = BorderOutline)
+
+                                        IconButton(
+                                            onClick = { selectedTab = 0 },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Assignment,
+                                                contentDescription = "Données",
+                                                tint = PrimaryBlueDark,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

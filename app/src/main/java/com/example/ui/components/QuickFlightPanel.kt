@@ -50,6 +50,7 @@ fun QuickFlightPanel(
     onDeleteHistoryItem: (Long) -> Unit,
     declaredTimesMap: Map<String, Double> = emptyMap(),
     onDeclaredTimeChange: ((pointId: String, seconds: Double) -> Unit)? = null,
+    onSwitchToMapClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -137,6 +138,28 @@ fun QuickFlightPanel(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     HorizontalDivider(color = BorderOutline, thickness = 1.dp)
+
+                    if (onSwitchToMapClick != null) {
+                        Button(
+                            onClick = onSwitchToMapClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlueDark),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Map,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "🗺️ VOIR LA CARTE PLEIN ÉCRAN",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
 
                     // Main Action Buttons Row: Open JSON / Start Flight GPS / Stop & Correct
                     Row(
