@@ -177,9 +177,11 @@ object GeometryUtils {
         return indices.map { points[it] }
     }
 
-    fun removeOutliers(points: List<GpxPoint>, maxKmh: Double): List<GpxPoint> {
+    fun removeOutliers(points: List<GpxPoint>, maxKmh: Double = 250.0): List<GpxPoint> {
         if (points.size < 3) return points.toList()
         val result = mutableListOf(points[0])
+        var consecutiveSkips = 0
+
         for (i in 1 until points.size) {
             val prev = result.last()
             val cur = points[i]
@@ -187,12 +189,25 @@ object GeometryUtils {
                 val dt = (cur.time - prev.time) / 1000.0
                 if (dt <= 0) {
                     result.add(cur)
+                    consecutiveSkips = 0
                     continue
                 }
                 val speed = (haversine(prev.lat, prev.lng, cur.lat, cur.lng) / dt) * 3.6
-                if (speed > maxKmh) continue
+                if (speed > maxKmh && consecutiveSkips < 2) {
+                    if (i + 1 < points.size && points[i + 1].time != null) {
+                        val dtNext = (points[i + 1].time!! - prev.time) / 1000.0
+                        if (dtNext > 0) {
+                            val speedNext = (haversine(prev.lat, prev.lng, points[i + 1].lat, points[i + 1].lng) / dtNext) * 3.6
+                            if (speedNext <= maxKmh) {
+                                consecutiveSkips++
+                                continue
+                            }
+                        }
+                    }
+                }
             }
             result.add(cur)
+            consecutiveSkips = 0
         }
         return result
     }
@@ -321,19 +336,23 @@ object GeometryUtils {
 
         courseData.points.forEach { p ->
             var foundIdx: Int? = null
+            var foundTime: Long? = null
             val pLocal = toXY(LatLng(p.lat, p.lng), origin)
             val isCircle = p.type.equals("balise", true) || p.type.equals("cachee", true)
 
             if (isCircle) {
+                val searchRadius = if (p.radius > 0) p.radius else 150.0
                 for (i in pointer until traceLocal.size) {
-                    if (hypot(traceLocal[i].x - pLocal.x, traceLocal[i].y - pLocal.y) <= p.radius) {
+                    val d = hypot(traceLocal[i].x - pLocal.x, traceLocal[i].y - pLocal.y)
+                    if (d <= searchRadius) {
                         foundIdx = i
+                        foundTime = trace[i].time
                         break
                     }
                 }
             } else {
                 val frame = gateFrameFor(p, courseData, origin)
-                val halfWidth = (p.width / 2.0).coerceAtLeast(30.0)
+                val halfWidth = (p.width / 2.0).coerceAtLeast(50.0)
 
                 for (i in max(pointer, 1) until traceLocal.size) {
                     val a = traceLocal[i - 1]
@@ -344,18 +363,40 @@ object GeometryUtils {
                     val crossed = (dA < 0 && dB >= 0) || (dA >= 0 && dB <= 0)
                     if (crossed) {
                         val denominator = (dA - dB)
-                        val t = if (abs(denominator) > 1e-6) dA / denominator else 0.5
+                        val t = if (abs(denominator) > 1e-6) (dA / denominator).coerceIn(0.0, 1.0) else 0.5
                         val xCross = Point2D(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
                         val offset = (xCross.x - frame.local.x) * frame.perp.x + (xCross.y - frame.local.y) * frame.perp.y
                         if (abs(offset) <= halfWidth) {
                             foundIdx = i
+                            val timeA = trace[i - 1].time
+                            val timeB = trace[i].time
+                            if (timeA != null && timeB != null && timeB >= timeA) {
+                                foundTime = (timeA + t * (timeB - timeA)).toLong()
+                            } else {
+                                foundTime = timeB ?: timeA
+                            }
                             break
                         }
                     }
 
-                    val distToCenter = hypot(b.x - pLocal.x, b.y - pLocal.y)
+                    // Backup check: distance from segment to gate center
+                    val dx = b.x - a.x
+                    val dy = b.y - a.y
+                    val len2 = dx * dx + dy * dy
+                    val projT = if (len2 > 1e-6) (((pLocal.x - a.x) * dx + (pLocal.y - a.y) * dy) / len2).coerceIn(0.0, 1.0) else 0.5
+                    val projX = a.x + projT * dx
+                    val projY = a.y + projT * dy
+                    val distToCenter = hypot(projX - pLocal.x, projY - pLocal.y)
+
                     if (distToCenter <= halfWidth) {
                         foundIdx = i
+                        val timeA = trace[i - 1].time
+                        val timeB = trace[i].time
+                        if (timeA != null && timeB != null && timeB >= timeA) {
+                            foundTime = (timeA + projT * (timeB - timeA)).toLong()
+                        } else {
+                            foundTime = timeB ?: timeA
+                        }
                         break
                     }
                 }
@@ -367,7 +408,7 @@ object GeometryUtils {
                         point = p,
                         validated = true,
                         traceIndex = foundIdx,
-                        time = trace[foundIdx].time
+                        time = foundTime ?: trace[foundIdx].time
                     )
                 )
                 pointer = foundIdx

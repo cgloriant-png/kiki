@@ -432,14 +432,21 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         locationListener = android.location.LocationListener { location ->
+            // Filter inaccurate location jumps (>100m)
+            if (location.hasAccuracy() && location.accuracy > 100f) {
+                return@LocationListener
+            }
+
             val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else 0.0
             _currentSpeedKmh.value = speedKmh
+
+            val timeMs = if (location.time > 0) location.time else System.currentTimeMillis()
 
             val gpxPt = GpxPoint(
                 lat = location.latitude,
                 lng = location.longitude,
                 ele = if (location.hasAltitude()) location.altitude else null,
-                time = location.time
+                time = timeMs
             )
             recordedPointsList.add(gpxPt)
             _recordedGpsCount.value = recordedPointsList.size
@@ -455,17 +462,9 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
             locationManager?.requestLocationUpdates(
                 android.location.LocationManager.GPS_PROVIDER,
                 1000L,
-                2.0f,
+                0.0f,
                 locationListener!!
             )
-            if (locationManager?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true) {
-                locationManager?.requestLocationUpdates(
-                    android.location.LocationManager.NETWORK_PROVIDER,
-                    2000L,
-                    5.0f,
-                    locationListener!!
-                )
-            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -495,8 +494,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
             _traceCorrected.value = pointsToAnalyze
 
             if (pointsToAnalyze.size > 5) {
-                cleanOutliers(180.0)
-                applySimplification(1.5)
+                cleanOutliers(250.0)
             }
 
             analyzeFlight(EpreuveType.PRECISION, ScoringRef(), _declaredTimesMap.value)
