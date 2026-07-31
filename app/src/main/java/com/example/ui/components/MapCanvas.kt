@@ -121,6 +121,9 @@ fun MapCanvas(
     toolMode: MapToolMode,
     addPointType: String,
     tileProvider: MapTileProvider,
+    faultPoint: LatLng? = null,
+    faultDescription: String? = null,
+    focusLocation: LatLng? = null,
     onPointAdded: (String, Double, Double) -> Unit,
     onVertexAdded: (Double, Double) -> Unit,
     onVerticesDrawn: (List<LatLng>) -> Unit,
@@ -148,6 +151,14 @@ fun MapCanvas(
         if (courseData.points.isNotEmpty() || courseData.routeVertices.isNotEmpty()) {
             centerLat = origin.lat
             centerLng = origin.lng
+        }
+    }
+
+    LaunchedEffect(focusLocation) {
+        focusLocation?.let { loc ->
+            centerLat = loc.lat
+            centerLng = loc.lng
+            zoomLevel = 15f
         }
     }
 
@@ -198,60 +209,16 @@ fun MapCanvas(
                 .fillMaxSize()
                 .pointerInput(toolMode) {
                     if (toolMode == MapToolMode.NAVIGATE) {
-                        try {
-                            detectTransformGestures { centroid, pan, zoom, _ ->
-                                if (zoom != 1f) {
-                                    zoomLevel = (zoomLevel * zoom).coerceIn(4f, 18f)
-                                }
-                                if (pan != Offset.Zero) {
-                                    val touchRadiusPx = with(density) { 36.dp.toPx() }
-
-                                    if (draggedPointId == null && draggedVertexId == null && !isDraggingPoint) {
-                                        var closestPtId: String? = null
-                                        var closestVertId: String? = null
-                                        var minDist = touchRadiusPx
-
-                                        courseData.points.forEach { p ->
-                                            val pScreen = latLngToScreen(p.lat, p.lng)
-                                            val d = hypot(pScreen.x - (centroid.x - pan.x), pScreen.y - (centroid.y - pan.y))
-                                            if (d < minDist) {
-                                                minDist = d
-                                                closestPtId = p.id
-                                            }
-                                        }
-
-                                        if (closestPtId == null) {
-                                            courseData.routeVertices.forEach { v ->
-                                                val vScreen = latLngToScreen(v.lat, v.lng)
-                                                val d = hypot(vScreen.x - (centroid.x - pan.x), vScreen.y - (centroid.y - pan.y))
-                                                if (d < minDist) {
-                                                    minDist = d
-                                                    closestVertId = v.id
-                                                }
-                                            }
-                                        }
-
-                                        draggedPointId = closestPtId
-                                        draggedVertexId = closestVertId
-                                        isDraggingPoint = (closestPtId != null || closestVertId != null)
-                                    }
-
-                                    if (draggedPointId != null || draggedVertexId != null) {
-                                        val latLng = screenToLatLng(centroid)
-                                        draggedPointId?.let { id -> onPointDragged(id, latLng.lat, latLng.lng) }
-                                        draggedVertexId?.let { id -> onVertexDragged(id, latLng.lat, latLng.lng) }
-                                    } else {
-                                        val targetCenterScreen = Offset(canvasSize.width / 2f - pan.x, canvasSize.height / 2f - pan.y)
-                                        val newCenter = screenToLatLng(targetCenterScreen)
-                                        centerLat = newCenter.lat
-                                        centerLng = newCenter.lng
-                                    }
-                                }
+                        detectTransformGestures { centroid, pan, zoom, _ ->
+                            if (zoom != 1f) {
+                                zoomLevel = (zoomLevel * zoom).coerceIn(4f, 18f)
                             }
-                        } finally {
-                            draggedPointId = null
-                            draggedVertexId = null
-                            isDraggingPoint = false
+                            if (pan != Offset.Zero) {
+                                val targetCenterScreen = Offset(canvasSize.width / 2f - pan.x, canvasSize.height / 2f - pan.y)
+                                val newCenter = screenToLatLng(targetCenterScreen)
+                                centerLat = newCenter.lat
+                                centerLng = newCenter.lng
+                            }
                         }
                     }
                 }
@@ -516,6 +483,33 @@ fun MapCanvas(
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
                     )
                 }
+            }
+
+            // Draw fault marker (Red Flag & Pulsing Target) if faultPoint is set
+            faultPoint?.let { fp ->
+                val fpScreen = latLngToScreen(fp.lat, fp.lng)
+                val pulseRadius = 24.dp.toPx()
+                val innerRadius = 12.dp.toPx()
+
+                // Red translucent outer target ring
+                drawCircle(color = RedAlert.copy(alpha = 0.35f), radius = pulseRadius, center = fpScreen)
+                drawCircle(color = RedAlert, radius = innerRadius, center = fpScreen)
+                drawCircle(color = Color.White, radius = innerRadius, center = fpScreen, style = Stroke(width = 3.dp.toPx()))
+                drawCircle(color = RedAlert, radius = 5.dp.toPx(), center = fpScreen)
+
+                val labelText = "🚩 FAUTE : ${faultDescription ?: "Pénalité / Anomalie"}"
+                drawContext.canvas.nativeCanvas.drawText(
+                    labelText,
+                    fpScreen.x,
+                    fpScreen.y - 22.dp.toPx(),
+                    AndroidPaint().apply {
+                        color = android.graphics.Color.RED
+                        textSize = 13.sp.toPx()
+                        textAlign = AndroidPaint.Align.CENTER
+                        isFakeBoldText = true
+                        setShadowLayer(6f, 0f, 0f, android.graphics.Color.WHITE)
+                    }
+                )
             }
 
             // 6. Scale bar

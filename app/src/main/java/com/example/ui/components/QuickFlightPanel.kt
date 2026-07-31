@@ -28,6 +28,7 @@ import com.example.data.model.FlightAnalysisResult
 import com.example.data.model.FlightHistoryEntity
 import com.example.data.model.PointValidationResult
 import com.example.ui.theme.*
+import com.example.util.LatLng
 
 @Composable
 fun QuickFlightPanel(
@@ -51,6 +52,7 @@ fun QuickFlightPanel(
     declaredTimesMap: Map<String, Double> = emptyMap(),
     onDeclaredTimeChange: ((pointId: String, seconds: Double) -> Unit)? = null,
     onSwitchToMapClick: (() -> Unit)? = null,
+    onFocusFaultClick: ((LatLng) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -325,11 +327,11 @@ fun QuickFlightPanel(
                                                     val totalSec = inputStr.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: 0.0
                                                     onDeclaredTimeChange?.invoke(pt.id, totalSec)
                                                 },
-                                                placeholder = { Text("ex: 120", fontSize = 11.sp) },
+                                                placeholder = { Text("120", fontSize = 11.sp, color = SecondaryText.copy(alpha = 0.5f)) },
                                                 trailingIcon = { Text("s", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText) },
                                                 singleLine = true,
                                                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
-                                                modifier = Modifier.width(95.dp).height(42.dp)
+                                                modifier = Modifier.width(115.dp)
                                             )
                                         }
                                     }
@@ -437,6 +439,37 @@ fun QuickFlightPanel(
                                         color = SecondaryText,
                                         modifier = Modifier.padding(top = 4.dp)
                                     )
+                                }
+
+                                flightResult.faultPoint?.let { fp ->
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Button(
+                                        onClick = {
+                                            onFocusFaultClick?.invoke(fp)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = RedAlert),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.LocationOn,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "🚩 VOIR LA FAUTE SUR LA CARTE",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
                                 }
 
                                 if (flightResult.results.isNotEmpty()) {

@@ -81,6 +81,13 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     private val _isCleanMapMode = MutableStateFlow(false)
     val isCleanMapMode: StateFlow<Boolean> = _isCleanMapMode.asStateFlow()
 
+    private val _mapFocusLocation = MutableStateFlow<LatLng?>(null)
+    val mapFocusLocation: StateFlow<LatLng?> = _mapFocusLocation.asStateFlow()
+
+    fun focusOnMapLocation(location: LatLng) {
+        _mapFocusLocation.value = location
+    }
+
     // GPS Live Recording State
     private val _isRecordingGps = MutableStateFlow(false)
     val isRecordingGps: StateFlow<Boolean> = _isRecordingGps.asStateFlow()
@@ -577,7 +584,9 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     private fun recalculateConformity() {
         val trace = _traceCorrected.value ?: _traceRaw.value
         if (trace != null && trace.isNotEmpty()) {
-            _conformity.value = GeometryUtils.conformity(_courseData.value, trace)
+            val spResult = _flightResult.value?.results?.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
+            val fpResult = _flightResult.value?.results?.find { it.point.type.equals("FP", true) || it.point.id.equals("FP", true) }
+            _conformity.value = GeometryUtils.conformity(_courseData.value, trace, spResult?.traceIndex, fpResult?.traceIndex)
         } else {
             _conformity.value = null
         }

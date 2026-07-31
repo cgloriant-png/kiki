@@ -426,13 +426,25 @@ object GeometryUtils {
         return results
     }
 
-    fun conformity(courseData: CourseData, trace: List<GpxPoint>): ConformityStats? {
+    fun conformity(
+        courseData: CourseData,
+        trace: List<GpxPoint>,
+        spIndex: Int? = null,
+        fpIndex: Int? = null
+    ): ConformityStats? {
         val origin = courseOrigin(courseData)
         val cl = centerlineDenseGeo(courseData, origin)
         if (trace.isEmpty() || cl.size < 2) return null
+
+        val startIdx = (spIndex ?: 0).coerceIn(0, trace.size - 1)
+        val endIdx = (fpIndex ?: (trace.size - 1)).coerceIn(startIdx, trace.size - 1)
+
+        val activeTrace = if (endIdx > startIdx) trace.subList(startIdx, endIdx + 1) else trace
+        if (activeTrace.size < 2) return null
+
         val clLocal = cl.map { toXY(it, origin) }
         val half = courseData.corridorWidth / 2.0
-        val traceLocal = trace.map { toXY(LatLng(it.lat, it.lng), origin) }
+        val traceLocal = activeTrace.map { toXY(LatLng(it.lat, it.lng), origin) }
 
         var insidePts = 0
         var insideDist = 0.0
@@ -444,48 +456,82 @@ object GeometryUtils {
             if (distToPolyline(traceLocal[i], clLocal) <= half) insidePts++
         }
 
-        for (i in 1 until trace.size) {
-            val segDist = haversine(trace[i - 1].lat, trace[i - 1].lng, trace[i].lat, trace[i].lng)
+        for (i in 1 until activeTrace.size) {
+            val segDist = haversine(activeTrace[i - 1].lat, activeTrace[i - 1].lng, activeTrace[i].lat, activeTrace[i].lng)
             val dA = distToPolyline(traceLocal[i - 1], clLocal)
             val dB = distToPolyline(traceLocal[i], clLocal)
             val bothIn = (dA <= half && dB <= half)
             totalDist += segDist
             if (bothIn) insideDist += segDist
 
-            if (trace[i - 1].time != null && trace[i].time != null) {
-                val dt = (trace[i].time!! - trace[i - 1].time!!) / 1000.0
-                totalTime += dt
-                if (bothIn) insideTime += dt
+            if (activeTrace[i - 1].time != null && activeTrace[i].time != null) {
+                val dt = (activeTrace[i].time!! - activeTrace[i - 1].time!!) / 1000.0
+                if (dt > 0) {
+                    totalTime += dt
+                    if (bothIn) insideTime += dt
+                }
             }
         }
 
         return ConformityStats(
-            pctPts = (100.0 * insidePts / trace.size).roundToInt(),
+            pctPts = (100.0 * insidePts / activeTrace.size).roundToInt(),
             pctDist = if (totalDist > 0) (100.0 * insideDist / totalDist).roundToInt() else null,
             pctTime = if (totalTime > 0) (100.0 * insideTime / totalTime).roundToInt() else null
         )
     }
 
-    fun detectBacktracking(courseData: CourseData, trace: List<GpxPoint>, thresholdDeg: Double): Boolean {
+    data class BacktrackResult(
+        val hasBacktrack: Boolean,
+        val location: LatLng? = null,
+        val description: String? = null
+    )
+
+    fun detectBacktracking(
+        courseData: CourseData,
+        trace: List<GpxPoint>,
+        thresholdDeg: Double,
+        spIndex: Int? = null,
+        fpIndex: Int? = null
+    ): BacktrackResult {
         val origin = courseOrigin(courseData)
         val cl = centerlineDenseGeo(courseData, origin)
-        if (cl.size < 2 || trace.size < 3) return false
+        if (cl.size < 2 || trace.size < 3) return BacktrackResult(false)
         val clLocal = cl.map { toXY(it, origin) }
         val half = courseData.corridorWidth / 2.0
         val traceLocal = trace.map { toXY(LatLng(it.lat, it.lng), origin) }
         val thresholdCos = cos(toRad(thresholdDeg))
 
-        for (i in 1 until (traceLocal.size - 1)) {
+        val startIdx = (spIndex ?: 1).coerceAtLeast(1)
+        val endIdx = (fpIndex ?: (traceLocal.size - 2)).coerceAtMost(traceLocal.size - 2)
+
+        if (startIdx >= endIdx) return BacktrackResult(false)
+
+        for (i in startIdx..endIdx) {
             if (distToPolyline(traceLocal[i], clLocal) > half) continue
-            val v1 = Point2D(traceLocal[i].x - traceLocal[i - 1].x, traceLocal[i].y - traceLocal[i - 1].y)
-            val v2 = Point2D(traceLocal[i + 1].x - traceLocal[i].x, traceLocal[i + 1].y - traceLocal[i].y)
+
+            val pPrev = traceLocal[i - 1]
+            val pCur = traceLocal[i]
+            val pNext = traceLocal[i + 1]
+
+            val v1 = Point2D(pCur.x - pPrev.x, pCur.y - pPrev.y)
+            val v2 = Point2D(pNext.x - pCur.x, pNext.y - pCur.y)
             val l1 = hypot(v1.x, v1.y)
             val l2 = hypot(v2.x, v2.y)
-            if (l1 < 1e-6 || l2 < 1e-6) continue
+
+            // Ignore micro GPS noise (jitter < 8.0 meters)
+            if (l1 < 8.0 || l2 < 8.0) continue
+
             val cosInterior = -(v1.x * v2.x + v1.y * v2.y) / (l1 * l2)
-            if (cosInterior > thresholdCos) return true
+            if (cosInterior > thresholdCos) {
+                val loc = LatLng(trace[i].lat, trace[i].lng)
+                return BacktrackResult(
+                    hasBacktrack = true,
+                    location = loc,
+                    description = "Demi-tour / Retour en arrière (angle < ${thresholdDeg.toInt()}°)"
+                )
+            }
         }
-        return false
+        return BacktrackResult(false)
     }
 
     fun scoreFlight(
@@ -512,10 +558,15 @@ object GeometryUtils {
         }
 
         val results = validateAgainstCourse(trace, courseData, origin)
+        val spResult = results.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
+        val fpResult = results.find { it.point.type.equals("FP", true) || it.point.id.equals("FP", true) }
+
         var score = 0.0
         var label = ""
         var bannerTxt = ""
         var breakdown: Map<String, Int>? = null
+
+        val confStats = conformity(courseData, trace, spResult?.traceIndex, fpResult?.traceIndex)
 
         when (epreuveType) {
             EpreuveType.PURE -> {
@@ -566,8 +617,7 @@ object GeometryUtils {
                     val id = it.point.id.lowercase()
                     t != "sp" && id != "sp" && t != "fp" && id != "fp"
                 }
-                val sp = results.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
-                val spTime = if (sp != null && sp.validated && sp.time != null) sp.time else trace.firstOrNull()?.time
+                val spTime = if (spResult != null && spResult.validated && spResult.time != null) spResult.time else trace.firstOrNull()?.time
 
                 var sumH = 0.0
                 tgResults.forEach { r ->
@@ -592,8 +642,7 @@ object GeometryUtils {
                     sTxt = " · Vitesse : ${(speedRatio * 100).roundToInt()}%"
                 }
 
-                val conf = conformity(courseData, trace)
-                val couloirRatio = if (conf?.pctDist != null) conf.pctDist / 100.0 else 0.0
+                val couloirRatio = if (confStats?.pctDist != null) confStats.pctDist / 100.0 else 0.0
 
                 val wGates = ref.wGates
                 val wTime = ref.wTime
@@ -621,7 +670,7 @@ object GeometryUtils {
                 )
                 label = "Navigation précision — barème (portes ${wGates.toInt()} + temps ${wTime.toInt()} + vitesse ${wSpeed.toInt()} + couloir ${wCouloir.toInt()})"
                 bannerTxt = "Portes franchies : $tc/${hidden.size}. Portes mesurées : ${tgResults.size}.$sTxt" +
-                        if (conf?.pctDist != null) " · Couloir : ${conf.pctDist}%" else ""
+                        if (confStats?.pctDist != null) " · Couloir : ${confStats.pctDist}% (entre SP et FP)" else ""
             }
             EpreuveType.ECO_DIST -> {
                 val dmax = if ((ref.dmax ?: 0.0) > 0) ref.dmax!! else dist
@@ -639,18 +688,32 @@ object GeometryUtils {
         }
 
         val pen = courseData.penalties
-        val spResult = results.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
-        val fpResult = results.find { it.point.type.equals("FP", true) || it.point.id.equals("FP", true) }
         var mandatoryMsg = ""
+        var faultPoint: LatLng? = null
+        var faultDesc: String? = null
 
         if (pen.requireSP && spResult != null && !spResult.validated) {
             mandatoryMsg += "⚠ Porte d'entrée (SP) non franchie — score = 0. "
+            faultPoint = LatLng(spResult.point.lat, spResult.point.lng)
+            faultDesc = "Porte SP non franchie"
         }
         if (pen.requireFP && fpResult != null && !fpResult.validated) {
             mandatoryMsg += "⚠ Porte de sortie (FP) non franchie — score = 0. "
+            if (faultPoint == null) {
+                faultPoint = LatLng(fpResult.point.lat, fpResult.point.lng)
+                faultDesc = "Porte FP non franchie"
+            }
         }
-        if (pen.noBacktrack && detectBacktracking(courseData, trace, pen.backtrackAngleDeg)) {
-            mandatoryMsg += "⚠ Retour en arrière détecté dans le couloir (angle < ${pen.backtrackAngleDeg.toInt()}°) — score = 0. "
+
+        if (pen.noBacktrack) {
+            val backtrackRes = detectBacktracking(courseData, trace, pen.backtrackAngleDeg, spResult?.traceIndex, fpResult?.traceIndex)
+            if (backtrackRes.hasBacktrack) {
+                mandatoryMsg += "⚠ Demi-tour / Retour en arrière détecté dans le couloir (angle < ${pen.backtrackAngleDeg.toInt()}°) — score = 0. "
+                if (faultPoint == null) {
+                    faultPoint = backtrackRes.location
+                    faultDesc = backtrackRes.description ?: "Demi-tour / Retour en arrière"
+                }
+            }
         }
 
         if (mandatoryMsg.isNotEmpty()) {
@@ -658,7 +721,6 @@ object GeometryUtils {
             bannerTxt = mandatoryMsg + bannerTxt
         }
 
-        val confStats = conformity(courseData, trace)
         val finalScore = max(0, min(1000, score.roundToInt()))
 
         return FlightAnalysisResult(
@@ -669,7 +731,9 @@ object GeometryUtils {
             distMeters = dist,
             durationSeconds = dur,
             breakdown = breakdown,
-            corridorStats = confStats
+            corridorStats = confStats,
+            faultPoint = faultPoint,
+            faultDescription = faultDesc
         )
     }
 

@@ -33,6 +33,7 @@ import com.example.ui.components.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.ParamoteurViewModel
 import com.example.util.GeometryUtils
+import com.example.util.LatLng
 
 class MainActivity : ComponentActivity() {
 
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
                 val flightDurationSeconds by viewModel.flightDurationSeconds.collectAsStateWithLifecycle()
                 val currentSpeedKmh by viewModel.currentSpeedKmh.collectAsStateWithLifecycle()
                 val declaredTimesMap by viewModel.declaredTimesMap.collectAsStateWithLifecycle()
+                val mapFocusLocation by viewModel.mapFocusLocation.collectAsStateWithLifecycle()
 
                 // Set default mode to Navigate & IGN Map
                 LaunchedEffect(Unit) {
@@ -213,7 +215,11 @@ class MainActivity : ComponentActivity() {
                                     onDeleteHistoryItem = { id -> viewModel.deleteHistoryFlight(id) },
                                     declaredTimesMap = declaredTimesMap,
                                     onDeclaredTimeChange = { ptId, sec -> viewModel.setDeclaredTime(ptId, sec) },
-                                    onSwitchToMapClick = { selectedTab = 1 }
+                                    onSwitchToMapClick = { selectedTab = 1 },
+                                    onFocusFaultClick = { loc ->
+                                        viewModel.focusOnMapLocation(loc)
+                                        selectedTab = 1
+                                    }
                                 )
                             }
                         } else {
@@ -231,6 +237,9 @@ class MainActivity : ComponentActivity() {
                                     toolMode = MapToolMode.NAVIGATE,
                                     addPointType = "balise",
                                     tileProvider = tileProvider,
+                                    faultPoint = flightResult?.faultPoint,
+                                    faultDescription = flightResult?.faultDescription,
+                                    focusLocation = mapFocusLocation,
                                     onPointAdded = { _, _, _ -> },
                                     onVertexAdded = { _, _ -> },
                                     onVerticesDrawn = { _ -> },

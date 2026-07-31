@@ -2,6 +2,7 @@ package com.example.data.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.example.util.LatLng
 
 enum class PointType(val label: String, val isCircle: Boolean) {
     SP("Porte d'entrée (SP)", false),
@@ -111,7 +112,9 @@ data class FlightAnalysisResult(
     val durationSeconds: Double?,
     val breakdown: Map<String, Int>? = null,
     val corridorStats: ConformityStats? = null,
-    val error: String? = null
+    val error: String? = null,
+    val faultPoint: LatLng? = null,
+    val faultDescription: String? = null
 )
 
 data class ConformityStats(
