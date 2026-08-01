@@ -32,10 +32,15 @@ class FlightGpsService : Service() {
             val intent = Intent(context, FlightGpsService::class.java).apply {
                 action = ACTION_START
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                GpsTrackerManager.startTracking()
             }
         }
 
@@ -65,12 +70,28 @@ class FlightGpsService : Service() {
         GpsTrackerManager.startTracking()
 
         val notification = buildNotification("Enregistrement du vol en cours...")
-        startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         // Acquire WakeLock so CPU stays active during screen lock / standby
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-        wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Paramoteur::FlightGpsWakeLock")?.apply {
-            acquire(3 * 3600 * 1000L) // max 3 hours
+        try {
+            wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Paramoteur::FlightGpsWakeLock")?.apply {
+                acquire(3 * 3600 * 1000L) // max 3 hours
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
 
         locationManager = getSystemService(Context.LOCATION_SERVICE) as? LocationManager
@@ -108,8 +129,17 @@ class FlightGpsService : Service() {
                 0.0f,
                 locationListener!!
             )
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             e.printStackTrace()
+        }
+
+        try {
+            locationManager?.requestLocationUpdates(
+                LocationManager.NETWORK_PROVIDER,
+                1000L,
+                0.0f,
+                locationListener!!
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }
