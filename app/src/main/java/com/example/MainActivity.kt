@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.setTileProvider(MapTileProvider.IGN_PLAN)
                 }
 
-                // Permission Launcher for GPS
+                // Permission Launcher for GPS & Notifications
                 val locationPermissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) { permissions ->
@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
                             permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
                     if (granted) {
                         viewModel.startGpsRecording(context)
-                        Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Enregistrement GPS du vol démarré en arrière-plan !", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Permission GPS requise pour enregistrer le vol", Toast.LENGTH_SHORT).show()
                     }
@@ -100,12 +100,14 @@ class MainActivity : ComponentActivity() {
                         viewModel.startGpsRecording(context)
                         Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
                     } else {
-                        locationPermissionLauncher.launch(
-                            arrayOf(
-                                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                android.Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
+                        val permsToRequest = mutableListOf(
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION
                         )
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            permsToRequest.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        locationPermissionLauncher.launch(permsToRequest.toTypedArray())
                     }
                 }
 
@@ -209,7 +211,7 @@ class MainActivity : ComponentActivity() {
                                     flightHistory = flightHistory,
                                     onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
                                     onStartGpsClick = { startFlightGps() },
-                                    onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze() },
+                                    onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze(context) },
                                     onResetFlightClick = { viewModel.clearTrace() },
                                     onLoadHistoryItem = { item -> viewModel.loadHistoryFlight(item) },
                                     onDeleteHistoryItem = { id -> viewModel.deleteHistoryFlight(id) },

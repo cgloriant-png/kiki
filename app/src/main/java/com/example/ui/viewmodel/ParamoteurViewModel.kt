@@ -125,6 +125,32 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
                 _savedCompetitions.value = list.map { Pair(it.slug, it.name) }
             }
         }
+        viewModelScope.launch {
+            com.example.service.GpsTrackerManager.isRecording.collect { rec ->
+                _isRecordingGps.value = rec
+            }
+        }
+        viewModelScope.launch {
+            com.example.service.GpsTrackerManager.pointsFlow.collect { pts ->
+                _recordedGpsCount.value = pts.size
+                if (pts.isNotEmpty()) {
+                    _lastGpsLocation.value = pts.last()
+                    _traceRaw.value = pts
+                    _traceCorrected.value = pts
+                    recalculateConformity()
+                }
+            }
+        }
+        viewModelScope.launch {
+            com.example.service.GpsTrackerManager.currentSpeedKmh.collect { speed ->
+                _currentSpeedKmh.value = speed
+            }
+        }
+        viewModelScope.launch {
+            com.example.service.GpsTrackerManager.durationSeconds.collect { dur ->
+                _flightDurationSeconds.value = dur
+            }
+        }
     }
 
     // --- Course Actions ---
@@ -419,79 +445,21 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? android.location.LocationManager
-        recordedPointsList.clear()
         _traceRaw.value = emptyList()
         _traceCorrected.value = emptyList()
         _flightResult.value = null
-        _isRecordingGps.value = true
-        _recordedGpsCount.value = 0
-        _flightDurationSeconds.value = 0L
-        flightStartTimestampMs = System.currentTimeMillis()
 
-        // Timer job for elapsed flight time
-        flightTimerJob?.cancel()
-        flightTimerJob = viewModelScope.launch {
-            while (_isRecordingGps.value) {
-                _flightDurationSeconds.value = (System.currentTimeMillis() - flightStartTimestampMs) / 1000
-                kotlinx.coroutines.delay(1000)
-            }
-        }
-
-        locationListener = android.location.LocationListener { location ->
-            // Filter inaccurate location jumps (>100m)
-            if (location.hasAccuracy() && location.accuracy > 100f) {
-                return@LocationListener
-            }
-
-            val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else 0.0
-            _currentSpeedKmh.value = speedKmh
-
-            val timeMs = if (location.time > 0) location.time else System.currentTimeMillis()
-
-            val gpxPt = GpxPoint(
-                lat = location.latitude,
-                lng = location.longitude,
-                ele = if (location.hasAltitude()) location.altitude else null,
-                time = timeMs
-            )
-            recordedPointsList.add(gpxPt)
-            _recordedGpsCount.value = recordedPointsList.size
-            _lastGpsLocation.value = gpxPt
-
-            val currentList = recordedPointsList.toList()
-            _traceRaw.value = currentList
-            _traceCorrected.value = currentList
-            recalculateConformity()
-        }
-
-        try {
-            locationManager?.requestLocationUpdates(
-                android.location.LocationManager.GPS_PROVIDER,
-                1000L,
-                0.0f,
-                locationListener!!
-            )
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        com.example.service.FlightGpsService.startService(context)
     }
 
-    fun stopGpsRecordingAndAnalyze() {
-        locationListener?.let {
-            try {
-                locationManager?.removeUpdates(it)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        locationListener = null
-        flightTimerJob?.cancel()
-        flightTimerJob = null
-        _isRecordingGps.value = false
+    fun stopGpsRecordingAndAnalyze(context: android.content.Context? = null) {
+        context?.let {
+            com.example.service.FlightGpsService.stopService(it)
+        } ?: com.example.service.GpsTrackerManager.stopTracking()
 
-        val pointsToAnalyze = if (recordedPointsList.isNotEmpty()) {
-            recordedPointsList.toList()
+        val recordedPts = com.example.service.GpsTrackerManager.recordedPoints.toList()
+        val pointsToAnalyze = if (recordedPts.isNotEmpty()) {
+            recordedPts
         } else {
             _traceCorrected.value ?: _traceRaw.value ?: emptyList()
         }
