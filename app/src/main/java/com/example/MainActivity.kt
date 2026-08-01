@@ -368,11 +368,11 @@ class MainActivity : ComponentActivity() {
             }
             uri?.let { u ->
                 contentResolver.openInputStream(u)?.use { stream ->
-                    val content = stream.bufferedReader().readText()
-                    if (content.trim().startsWith("{")) {
-                        viewModel.importCourseJson(content)
+                    val rawContent = stream.bufferedReader().readText().replace("\uFEFF", "").trim()
+                    if (rawContent.startsWith("{") || rawContent.startsWith("[")) {
+                        viewModel.importCourseJson(rawContent)
                         Toast.makeText(this, "Épreuve JSON importée et enregistrée avec succès !", Toast.LENGTH_LONG).show()
-                    } else if (content.contains("<gpx", ignoreCase = true)) {
+                    } else if (rawContent.contains("<gpx", ignoreCase = true)) {
                         contentResolver.openInputStream(u)?.use { gpxStream ->
                             viewModel.loadGpxFromStream(gpxStream)
                             Toast.makeText(this, "Trace GPX importée !", Toast.LENGTH_LONG).show()
