@@ -103,8 +103,12 @@ class MainActivity : ComponentActivity() {
                         context,
                         android.Manifest.permission.ACCESS_FINE_LOCATION
                     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val coarseGranted = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
-                    if (fineGranted) {
+                    if (fineGranted || coarseGranted) {
                         viewModel.startGpsRecording(context)
                         Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
                     } else {

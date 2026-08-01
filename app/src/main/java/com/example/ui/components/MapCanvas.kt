@@ -453,20 +453,33 @@ fun MapCanvas(
             }
 
             traceCorrected?.let { pts ->
-                if (pts.size > 1) {
-                    val cl = GeometryUtils.centerlineDenseGeo(courseData, origin)
-                    val clLocal = if (cl.size >= 2) cl.map { GeometryUtils.toXY(it, origin) } else null
-                    val half = courseData.corridorWidth / 2.0
-                    val tl = pts.map { GeometryUtils.toXY(LatLng(it.lat, it.lng), origin) }
+                if (pts.isNotEmpty()) {
                     val screenPts = pts.map { latLngToScreen(it.lat, it.lng) }
+                    if (pts.size == 1) {
+                        val pos = screenPts.first()
+                        drawCircle(color = GreenOk.copy(alpha = 0.3f), radius = 16.dp.toPx(), center = pos)
+                        drawCircle(color = GreenOk, radius = 8.dp.toPx(), center = pos)
+                        drawCircle(color = Color.White, radius = 8.dp.toPx(), center = pos, style = Stroke(width = 2.dp.toPx()))
+                    } else {
+                        val cl = GeometryUtils.centerlineDenseGeo(courseData, origin)
+                        val clLocal = if (cl.size >= 2) cl.map { GeometryUtils.toXY(it, origin) } else null
+                        val half = courseData.corridorWidth / 2.0
+                        val tl = pts.map { GeometryUtils.toXY(LatLng(it.lat, it.lng), origin) }
 
-                    for (i in 1 until screenPts.size) {
-                        var inside = true
-                        if (clLocal != null) {
-                            inside = GeometryUtils.distToPolyline(tl[i - 1], clLocal) <= half && GeometryUtils.distToPolyline(tl[i], clLocal) <= half
+                        for (i in 1 until screenPts.size) {
+                            var inside = true
+                            if (clLocal != null) {
+                                inside = GeometryUtils.distToPolyline(tl[i - 1], clLocal) <= half && GeometryUtils.distToPolyline(tl[i], clLocal) <= half
+                            }
+                            val color = if (inside) GreenOk else RedAlert
+                            drawLine(color = color, start = screenPts[i - 1], end = screenPts[i], strokeWidth = 3.5.dp.toPx())
                         }
-                        val color = if (inside) GreenOk else RedAlert
-                        drawLine(color = color, start = screenPts[i - 1], end = screenPts[i], strokeWidth = 3.5.dp.toPx())
+
+                        // Draw live current position marker on the last point
+                        val lastPos = screenPts.last()
+                        drawCircle(color = GreenOk.copy(alpha = 0.35f), radius = 14.dp.toPx(), center = lastPos)
+                        drawCircle(color = GreenOk, radius = 7.dp.toPx(), center = lastPos)
+                        drawCircle(color = Color.White, radius = 7.dp.toPx(), center = lastPos, style = Stroke(width = 2.dp.toPx()))
                     }
                 }
             }

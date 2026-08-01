@@ -5,6 +5,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import com.example.data.model.GpxPoint
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,8 @@ object GpsTrackerManager {
 
     private var locationManager: LocationManager? = null
     private var locationListener: LocationListener? = null
+    private var managerScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var timerJob: Job? = null
 
     fun startTracking(context: Context) {
         synchronized(recordedPoints) {
@@ -39,6 +42,17 @@ object GpsTrackerManager {
         startTimeMs = System.currentTimeMillis()
         _isRecording.value = true
 
+        // Timer job to update duration every second
+        timerJob?.cancel()
+        timerJob = managerScope.launch {
+            while (_isRecording.value) {
+                if (startTimeMs > 0) {
+                    _durationSeconds.value = (System.currentTimeMillis() - startTimeMs) / 1000
+                }
+                delay(1000)
+            }
+        }
+
         // Try launching FlightGpsService for foreground notifications safely
         try {
             FlightGpsService.startService(context)
@@ -49,6 +63,28 @@ object GpsTrackerManager {
         // Direct LocationManager listener as a failsafe
         try {
             locationManager = context.applicationContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+
+            // Check for last known location to start immediately
+            try {
+                val lastGps = locationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?: locationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    ?: locationManager?.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+
+                lastGps?.let { loc ->
+                    val speedKmh = if (loc.hasSpeed()) loc.speed * 3.6 else 0.0
+                    val timeMs = if (loc.time > 0) loc.time else System.currentTimeMillis()
+                    val gpxPt = GpxPoint(
+                        lat = loc.latitude,
+                        lng = loc.longitude,
+                        ele = if (loc.hasAltitude()) loc.altitude else null,
+                        time = timeMs
+                    )
+                    addPoint(gpxPt, speedKmh)
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+
             locationListener = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
                     if (location.hasAccuracy() && location.accuracy > 100f) return
@@ -65,18 +101,27 @@ object GpsTrackerManager {
                 }
             }
 
-            locationManager?.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER,
-                1000L,
-                0.0f,
-                locationListener!!
-            )
-            locationManager?.requestLocationUpdates(
-                LocationManager.NETWORK_PROVIDER,
-                1000L,
-                0.0f,
-                locationListener!!
-            )
+            try {
+                locationManager?.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    1000L,
+                    0.0f,
+                    locationListener!!
+                )
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+
+            try {
+                locationManager?.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    1000L,
+                    0.0f,
+                    locationListener!!
+                )
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
         } catch (e: Throwable) {
             e.printStackTrace()
         }
@@ -105,6 +150,9 @@ object GpsTrackerManager {
 
     fun stopTracking(context: Context? = null) {
         _isRecording.value = false
+        timerJob?.cancel()
+        timerJob = null
+
         locationListener?.let { listener ->
             try {
                 locationManager?.removeUpdates(listener)

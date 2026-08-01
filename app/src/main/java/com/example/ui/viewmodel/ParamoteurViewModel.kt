@@ -463,14 +463,21 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
 
     // --- GPS Live Recording & Flight Workflow ---
     fun startGpsRecording(context: android.content.Context) {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
+        val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!hasFine && !hasCoarse) {
             return
         }
 
+        _isRecordingGps.value = true
         _traceRaw.value = emptyList()
         _traceCorrected.value = emptyList()
         _flightResult.value = null
