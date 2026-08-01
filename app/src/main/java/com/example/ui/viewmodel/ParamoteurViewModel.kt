@@ -550,12 +550,17 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun recalculateConformity() {
-        val trace = _traceCorrected.value ?: _traceRaw.value
-        if (trace != null && trace.isNotEmpty()) {
-            val spResult = _flightResult.value?.results?.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
-            val fpResult = _flightResult.value?.results?.find { it.point.type.equals("FP", true) || it.point.id.equals("FP", true) }
-            _conformity.value = GeometryUtils.conformity(_courseData.value, trace, spResult?.traceIndex, fpResult?.traceIndex)
-        } else {
+        try {
+            val trace = _traceCorrected.value ?: _traceRaw.value
+            if (trace != null && trace.isNotEmpty()) {
+                val spResult = _flightResult.value?.results?.find { it.point.type.equals("SP", true) || it.point.id.equals("SP", true) }
+                val fpResult = _flightResult.value?.results?.find { it.point.type.equals("FP", true) || it.point.id.equals("FP", true) }
+                _conformity.value = GeometryUtils.conformity(_courseData.value, trace, spResult?.traceIndex, fpResult?.traceIndex)
+            } else {
+                _conformity.value = null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
             _conformity.value = null
         }
     }

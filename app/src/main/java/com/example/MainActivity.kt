@@ -347,9 +347,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        val uri: Uri? = intent?.data ?: intent?.getParcelableExtra(Intent.EXTRA_STREAM)
-        uri?.let { u ->
-            try {
+        if (intent == null) return
+        try {
+            val uri: Uri? = intent.data ?: if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                (intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
+            }
+            uri?.let { u ->
                 contentResolver.openInputStream(u)?.use { stream ->
                     val content = stream.bufferedReader().readText()
                     if (content.trim().startsWith("{")) {
@@ -362,9 +368,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-            } catch (e: Exception) {
-                Toast.makeText(this, "Erreur lors de l'ouverture du fichier", Toast.LENGTH_SHORT).show()
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }
