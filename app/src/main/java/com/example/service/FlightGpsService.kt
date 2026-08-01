@@ -58,12 +58,16 @@ class FlightGpsService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        if (intent == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        when (intent.action) {
             ACTION_START -> startGpsAndForeground()
             ACTION_STOP -> stopGpsAndSelf()
-            else -> startGpsAndForeground()
+            else -> stopSelf()
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun startGpsAndForeground() {
