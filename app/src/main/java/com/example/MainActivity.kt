@@ -41,8 +41,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        handleIncomingIntent(intent)
+        try {
+            enableEdgeToEdge()
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+        try {
+            handleIncomingIntent(intent)
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
 
         setContent {
             ParamoteurTheme {
@@ -348,11 +356,15 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
         try {
-            val uri: Uri? = intent.data ?: if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                (intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
+            val uri: Uri? = intent.data ?: try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    (intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
+                }
+            } catch (e: Throwable) {
+                null
             }
             uri?.let { u ->
                 contentResolver.openInputStream(u)?.use { stream ->
