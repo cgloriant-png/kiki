@@ -26,7 +26,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "paramoteur_db"
-                ).fallbackToDestructiveMigration().build()
+                ).fallbackToDestructiveMigration()
+                 .fallbackToDestructiveMigrationOnDowngrade()
+                 .build()
                 INSTANCE = instance
                 instance
             }

@@ -114,41 +114,67 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     private var vertexCounter = 0
     private var competitorCounter = 0
 
+    private var historyJob: kotlinx.coroutines.Job? = null
+
     private fun observeSavedData() {
         viewModelScope.launch {
-            repository.allCourses.collect { list ->
-                _savedCourses.value = list.map { Pair(it.slug, it.name) }
-            }
-        }
-        viewModelScope.launch {
-            repository.allCompetitions.collect { list ->
-                _savedCompetitions.value = list.map { Pair(it.slug, it.name) }
-            }
-        }
-        viewModelScope.launch {
-            com.example.service.GpsTrackerManager.isRecording.collect { rec ->
-                _isRecordingGps.value = rec
-            }
-        }
-        viewModelScope.launch {
-            com.example.service.GpsTrackerManager.pointsFlow.collect { pts ->
-                _recordedGpsCount.value = pts.size
-                if (pts.isNotEmpty()) {
-                    _lastGpsLocation.value = pts.last()
-                    _traceRaw.value = pts
-                    _traceCorrected.value = pts
-                    recalculateConformity()
+            try {
+                repository.allCourses.collect { list ->
+                    _savedCourses.value = list.map { Pair(it.slug, it.name) }
                 }
+            } catch (e: Throwable) {
+                e.printStackTrace()
             }
         }
         viewModelScope.launch {
-            com.example.service.GpsTrackerManager.currentSpeedKmh.collect { speed ->
-                _currentSpeedKmh.value = speed
+            try {
+                repository.allCompetitions.collect { list ->
+                    _savedCompetitions.value = list.map { Pair(it.slug, it.name) }
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
             }
         }
         viewModelScope.launch {
-            com.example.service.GpsTrackerManager.durationSeconds.collect { dur ->
-                _flightDurationSeconds.value = dur
+            try {
+                com.example.service.GpsTrackerManager.isRecording.collect { rec ->
+                    _isRecordingGps.value = rec
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+        }
+        viewModelScope.launch {
+            try {
+                com.example.service.GpsTrackerManager.pointsFlow.collect { pts ->
+                    _recordedGpsCount.value = pts.size
+                    if (pts.isNotEmpty()) {
+                        _lastGpsLocation.value = pts.last()
+                        _traceRaw.value = pts
+                        _traceCorrected.value = pts
+                        recalculateConformity()
+                    }
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+        }
+        viewModelScope.launch {
+            try {
+                com.example.service.GpsTrackerManager.currentSpeedKmh.collect { speed ->
+                    _currentSpeedKmh.value = speed
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+        }
+        viewModelScope.launch {
+            try {
+                com.example.service.GpsTrackerManager.durationSeconds.collect { dur ->
+                    _flightDurationSeconds.value = dur
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
             }
         }
     }
@@ -628,9 +654,14 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun loadHistoryForCurrentCourse(slug: String) {
-        viewModelScope.launch {
-            repository.getHistoryForCourse(slug).collect { list ->
-                _flightHistory.value = list
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
+            try {
+                repository.getHistoryForCourse(slug).collect { list ->
+                    _flightHistory.value = list
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
             }
         }
     }
