@@ -38,17 +38,20 @@ class FlightGpsService : Service() {
                 } else {
                     context.startService(intent)
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 e.printStackTrace()
-                GpsTrackerManager.startTracking()
             }
         }
 
         fun stopService(context: Context) {
-            val intent = Intent(context, FlightGpsService::class.java).apply {
-                action = ACTION_STOP
+            try {
+                val intent = Intent(context, FlightGpsService::class.java).apply {
+                    action = ACTION_STOP
+                }
+                context.stopService(intent)
+            } catch (e: Throwable) {
+                e.printStackTrace()
             }
-            context.stopService(intent)
         }
     }
 
@@ -58,23 +61,13 @@ class FlightGpsService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) {
-            stopSelf()
+        if (intent == null || intent.action == ACTION_STOP) {
+            stopGpsAndSelf()
             return START_NOT_STICKY
         }
-        when (intent.action) {
-            ACTION_START -> startGpsAndForeground()
-            ACTION_STOP -> stopGpsAndSelf()
-            else -> stopSelf()
-        }
-        return START_NOT_STICKY
-    }
 
-    private fun startGpsAndForeground() {
-        GpsTrackerManager.startTracking()
-
-        val notification = buildNotification("Enregistrement du vol en cours...")
         try {
+            val notification = buildNotification("Enregistrement du vol en cours...")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -84,17 +77,25 @@ class FlightGpsService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
+            // If startForeground fails on Android 14 (e.g. background restriction), stop service gracefully
+            stopSelf()
+            return START_NOT_STICKY
         }
 
+        startGpsTracking()
+        return START_NOT_STICKY
+    }
+
+    private fun startGpsTracking() {
         // Acquire WakeLock so CPU stays active during screen lock / standby
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         try {
             wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Paramoteur::FlightGpsWakeLock")?.apply {
                 acquire(3 * 3600 * 1000L) // max 3 hours
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
 
@@ -133,7 +134,7 @@ class FlightGpsService : Service() {
                 0.0f,
                 locationListener!!
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
 
@@ -144,7 +145,7 @@ class FlightGpsService : Service() {
                 0.0f,
                 locationListener!!
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
 
@@ -158,8 +159,12 @@ class FlightGpsService : Service() {
     }
 
     private fun updateNotification(content: String) {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        notificationManager?.notify(NOTIFICATION_ID, buildNotification(content))
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.notify(NOTIFICATION_ID, buildNotification(content))
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
     }
 
     private fun buildNotification(content: String): Notification {
@@ -182,24 +187,39 @@ class FlightGpsService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Enregistrement Vol GPS",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Notification permanente de suivi GPS du vol"
+            try {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "Enregistrement Vol GPS",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Notification permanente de suivi GPS du vol"
+                }
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                notificationManager?.createNotificationChannel(channel)
+            } catch (e: Throwable) {
+                e.printStackTrace()
             }
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            notificationManager?.createNotificationChannel(channel)
         }
     }
 
     private fun stopGpsAndSelf() {
-        locationListener?.let { locationManager?.removeUpdates(it) }
-        wakeLock?.let { if (it.isHeld) it.release() }
-        GpsTrackerManager.stopTracking()
+        try {
+            locationListener?.let { locationManager?.removeUpdates(it) }
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+        try {
+            wakeLock?.let { if (it.isHeld) it.release() }
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
         timerJob?.cancel()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
         stopSelf()
     }
 
@@ -211,3 +231,4 @@ class FlightGpsService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 }
+

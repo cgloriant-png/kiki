@@ -449,13 +449,11 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         _traceCorrected.value = emptyList()
         _flightResult.value = null
 
-        com.example.service.FlightGpsService.startService(context)
+        com.example.service.GpsTrackerManager.startTracking(context)
     }
 
     fun stopGpsRecordingAndAnalyze(context: android.content.Context? = null) {
-        context?.let {
-            com.example.service.FlightGpsService.stopService(it)
-        } ?: com.example.service.GpsTrackerManager.stopTracking()
+        com.example.service.GpsTrackerManager.stopTracking(context)
 
         val recordedPts = com.example.service.GpsTrackerManager.recordedPoints.toList()
         val pointsToAnalyze = if (recordedPts.isNotEmpty()) {
