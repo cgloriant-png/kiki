@@ -55,7 +55,8 @@ data class CourseData(
     var points: MutableList<CoursePoint> = mutableListOf(),
     var routeVertices: MutableList<RouteVertex> = mutableListOf(),
     var corridorWidth: Double = 200.0,
-    var penalties: CoursePenalties = CoursePenalties()
+    var penalties: CoursePenalties = CoursePenalties(),
+    var scoringRef: ScoringRef = ScoringRef()
 )
 
 data class GpxPoint(

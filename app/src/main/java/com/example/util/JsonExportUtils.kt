@@ -42,7 +42,128 @@ object JsonExportUtils {
         penObj.put("backtrackAngleDeg", course.penalties.backtrackAngleDeg)
         root.put("penalties", penObj)
 
+        val scObj = JSONObject()
+        scObj.put("wGates", course.scoringRef.wGates)
+        scObj.put("wTime", course.scoringRef.wTime)
+        scObj.put("wSpeed", course.scoringRef.wSpeed)
+        scObj.put("wCouloir", course.scoringRef.wCouloir)
+        course.scoringRef.tmin?.let { scObj.put("tmin", it) }
+        course.scoringRef.tmax?.let { scObj.put("tmax", it) }
+        course.scoringRef.dmax?.let { scObj.put("dmax", it) }
+        root.put("scoringRef", scObj)
+
         return root.toString(2)
+    }
+
+    private fun parseScoringRef(root: JSONObject): ScoringRef {
+        val scObj = root.optJSONObject("scoringRef") 
+            ?: root.optJSONObject("bareme") 
+            ?: root.optJSONObject("baremeEpreuve") 
+            ?: root.optJSONObject("scoring")
+            ?: root
+
+        // Check if wCouloir or parcours points are explicitly specified anywhere
+        val hasCouloirKey = scObj.has("wCouloir") || scObj.has("refWCouloir") || scObj.has("couloir") ||
+                scObj.has("wCourse") || scObj.has("parcours") || scObj.has("ptsCouloir") || scObj.has("ptsParcours") ||
+                root.has("wCouloir") || root.has("parcours")
+
+        val wCouloir = scObj.optDouble("wCouloir",
+            scObj.optDouble("refWCouloir",
+                scObj.optDouble("couloir",
+                    scObj.optDouble("wCourse",
+                        scObj.optDouble("parcours",
+                            scObj.optDouble("ptsCouloir",
+                                scObj.optDouble("ptsParcours",
+                                    root.optDouble("wCouloir",
+                                        root.optDouble("refWCouloir",
+                                            root.optDouble("couloir",
+                                                root.optDouble("wCourse",
+                                                    root.optDouble("parcours", 0.0)
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val hasGatesKey = scObj.has("wGates") || scObj.has("refWGates") || scObj.has("gates") || scObj.has("portes") || root.has("wGates")
+
+        val defaultGates = if (hasCouloirKey && wCouloir > 0) 0.0 else 600.0
+
+        val wGates = scObj.optDouble("wGates",
+            scObj.optDouble("refWGates",
+                scObj.optDouble("gates",
+                    scObj.optDouble("portes",
+                        scObj.optDouble("ptsPortes",
+                            root.optDouble("wGates",
+                                root.optDouble("refWGates",
+                                    root.optDouble("gates",
+                                        root.optDouble("portes", defaultGates)
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val wTime = scObj.optDouble("wTime",
+            scObj.optDouble("refWTime",
+                scObj.optDouble("time",
+                    scObj.optDouble("temps",
+                        scObj.optDouble("portesTemps",
+                            scObj.optDouble("ptsTemps",
+                                root.optDouble("wTime",
+                                    root.optDouble("refWTime",
+                                        root.optDouble("time",
+                                            root.optDouble("temps",
+                                                root.optDouble("portesTemps", 300.0)
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val wSpeed = scObj.optDouble("wSpeed",
+            scObj.optDouble("refWSpeed",
+                scObj.optDouble("speed",
+                    scObj.optDouble("vitesse",
+                        scObj.optDouble("ptsVitesse",
+                            root.optDouble("wSpeed",
+                                root.optDouble("refWSpeed",
+                                    root.optDouble("speed",
+                                        root.optDouble("vitesse", 0.0)
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        return ScoringRef(
+            maxTimeMin = if (scObj.has("maxTimeMin")) scObj.optDouble("maxTimeMin") else if (root.has("maxTimeMin")) root.optDouble("maxTimeMin") else null,
+            nbmax = if (scObj.has("nbmax")) scObj.optDouble("nbmax") else if (root.has("nbmax")) root.optDouble("nbmax") else null,
+            tmin = if (scObj.has("tmin")) scObj.optDouble("tmin") else if (root.has("tmin")) root.optDouble("tmin") else null,
+            dmax = if (scObj.has("dmax")) scObj.optDouble("dmax") else if (root.has("dmax")) root.optDouble("dmax") else null,
+            tmax = if (scObj.has("tmax")) scObj.optDouble("tmax") else if (root.has("tmax")) root.optDouble("tmax") else null,
+            wGates = wGates,
+            wTime = wTime,
+            wSpeed = wSpeed,
+            wCouloir = wCouloir
+        )
     }
 
     fun deserializeCourse(jsonStr: String): CourseData {
@@ -94,7 +215,9 @@ object JsonExportUtils {
             backtrackAngleDeg = penObj?.optDouble("backtrackAngleDeg", 45.0) ?: 45.0
         )
 
-        return CourseData(name, points, verts, corridorWidth, penalties)
+        val scoringRef = parseScoringRef(root)
+
+        return CourseData(name, points, verts, corridorWidth, penalties, scoringRef)
     }
 
     fun serializeCompetition(comp: CompetitionData): String {

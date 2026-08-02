@@ -642,7 +642,7 @@ object GeometryUtils {
                     sTxt = " · Vitesse : ${(speedRatio * 100).roundToInt()}%"
                 }
 
-                val couloirRatio = if (confStats?.pctDist != null) confStats.pctDist / 100.0 else 0.0
+                val couloirRatio = if (confStats?.pctDist != null) confStats.pctDist / 100.0 else (if (confStats?.pctPts != null) confStats.pctPts / 100.0 else 0.0)
 
                 val wGates = ref.wGates
                 val wTime = ref.wTime
@@ -662,15 +662,50 @@ object GeometryUtils {
                     } else if (r.hi != null) 0 else null
                 }
 
-                breakdown = mapOf(
-                    "Portes cachées" to gatesPts,
-                    "Temps déclarés" to timePts,
-                    "Vitesse" to speedPts,
-                    "Couloir" to couloirPts
-                )
-                label = "Navigation précision — barème (portes ${wGates.toInt()} + temps ${wTime.toInt()} + vitesse ${wSpeed.toInt()} + couloir ${wCouloir.toInt()})"
-                bannerTxt = "Portes franchies : $tc/${hidden.size}. Portes mesurées : ${tgResults.size}.$sTxt" +
-                        if (confStats?.pctDist != null) " · Couloir : ${confStats.pctDist}% (entre SP et FP)" else ""
+                val bdMap = mutableMapOf<String, Int>()
+                if (wCouloir > 0 || couloirPts > 0) {
+                    bdMap["Parcours (Couloir)"] = couloirPts
+                }
+                if (wTime > 0 || timePts > 0) {
+                    bdMap["Portes de temps"] = timePts
+                }
+                if (wGates > 0 || gatesPts > 0) {
+                    bdMap["Portes franchies"] = gatesPts
+                }
+                if (wSpeed > 0 || speedPts > 0) {
+                    bdMap["Vitesse"] = speedPts
+                }
+                breakdown = bdMap
+
+                val barDetails = mutableListOf<String>()
+                if (wCouloir > 0) barDetails.add("parcours ${wCouloir.toInt()}")
+                if (wGates > 0) barDetails.add("portes ${wGates.toInt()}")
+                if (wTime > 0) barDetails.add("temps ${wTime.toInt()}")
+                if (wSpeed > 0) barDetails.add("vitesse ${wSpeed.toInt()}")
+                label = "Barème : ${barDetails.joinToString(" + ")}"
+
+                val bannerParts = mutableListOf<String>()
+                if (wCouloir > 0) {
+                    val pct = confStats?.pctDist ?: confStats?.pctPts ?: 0
+                    bannerParts.add("Parcours couloir : $pct% ($couloirPts/${wCouloir.toInt()} pts)")
+                }
+                if (wGates > 0) {
+                    bannerParts.add("Portes franchies : $tc/${hidden.size} ($gatesPts/${wGates.toInt()} pts)")
+                } else if (hidden.isNotEmpty()) {
+                    bannerParts.add("Portes franchies : $tc/${hidden.size}")
+                }
+                if (wTime > 0) {
+                    if (declMap.isEmpty() && tgResults.isNotEmpty()) {
+                        bannerParts.add("Portes temps : $timePts/${wTime.toInt()} pts (Saisissez vos temps annoncés pour comptabiliser)")
+                    } else {
+                        bannerParts.add("Portes temps : $timePts/${wTime.toInt()} pts")
+                    }
+                }
+                if (wSpeed > 0) {
+                    bannerParts.add("Vitesse : $speedPts/${wSpeed.toInt()} pts")
+                }
+
+                bannerTxt = bannerParts.joinToString(" · ")
             }
             EpreuveType.ECO_DIST -> {
                 val dmax = if ((ref.dmax ?: 0.0) > 0) ref.dmax!! else dist

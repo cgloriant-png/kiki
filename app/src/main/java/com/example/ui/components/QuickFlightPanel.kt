@@ -189,13 +189,13 @@ fun QuickFlightPanel(
                             )
                         }
 
-                        // Flight GPS Control Button
+                        // Flight GPS Control Buttons
                         if (!isRecordingGps) {
                             Button(
                                 onClick = onStartGpsClick,
                                 colors = ButtonDefaults.buttonColors(containerColor = GreenSuccess),
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1.3f)
+                                modifier = Modifier.weight(1f)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.PlayArrow,
@@ -205,7 +205,27 @@ fun QuickFlightPanel(
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "DÉBUTER LE VOL",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+
+                            Button(
+                                onClick = onStopGpsAndAnalyzeClick,
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlueDark),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1.2f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DoneAll,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "POSÉ ! (CORRIGER)",
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
@@ -366,6 +386,11 @@ fun QuickFlightPanel(
                                     icon = Icons.Default.Timer
                                 )
                                 LiveMetric(
+                                    label = "DISTANCE",
+                                    value = com.example.util.GeometryUtils.fmtDist(flightResult?.distMeters ?: 0.0),
+                                    icon = Icons.Default.Navigation
+                                )
+                                LiveMetric(
                                     label = "VITESSE",
                                     value = "%.1f km/h".format(currentSpeedKmh),
                                     icon = Icons.Default.Speed
@@ -439,6 +464,42 @@ fun QuickFlightPanel(
                                         color = SecondaryText,
                                         modifier = Modifier.padding(top = 4.dp)
                                     )
+                                }
+
+                                flightResult.breakdown?.let { bd ->
+                                    if (bd.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Surface(
+                                            color = HighDensityNavBar,
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderOutline),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "DÉTAIL DES POINTS (BARÈME) :",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = HighDensityHeaderTitle
+                                                )
+                                                bd.forEach { (cat, pts) ->
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(text = "• $cat", fontSize = 11.sp, color = SecondaryText)
+                                                        Text(text = "$pts pts", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryBlueDark)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 flightResult.faultPoint?.let { fp ->

@@ -42,14 +42,17 @@ object GpsTrackerManager {
         startTimeMs = System.currentTimeMillis()
         _isRecording.value = true
 
-        // Timer job to update duration every second
+        // Timer job to update duration continuously
         timerJob?.cancel()
-        timerJob = managerScope.launch {
+        timerJob = managerScope.launch(Dispatchers.Default) {
             while (_isRecording.value) {
                 if (startTimeMs > 0) {
-                    _durationSeconds.value = (System.currentTimeMillis() - startTimeMs) / 1000
+                    val currentSec = (System.currentTimeMillis() - startTimeMs) / 1000
+                    if (_durationSeconds.value != currentSec) {
+                        _durationSeconds.value = currentSec
+                    }
                 }
-                delay(1000)
+                delay(500)
             }
         }
 

@@ -13,6 +13,8 @@ import com.example.util.GeometryUtils
 import com.example.util.GpxParser
 import com.example.util.JsonExportUtils
 import com.example.util.LatLng
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -478,14 +480,30 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         _isRecordingGps.value = true
+        _recordedGpsCount.value = 0
+        _flightDurationSeconds.value = 0L
+        _currentSpeedKmh.value = 0.0
         _traceRaw.value = emptyList()
         _traceCorrected.value = emptyList()
         _flightResult.value = null
 
         com.example.service.GpsTrackerManager.startTracking(context)
+
+        flightTimerJob?.cancel()
+        flightTimerJob = viewModelScope.launch(Dispatchers.Default) {
+            val startTime = System.currentTimeMillis()
+            while (_isRecordingGps.value) {
+                val sec = (System.currentTimeMillis() - startTime) / 1000
+                _flightDurationSeconds.value = sec
+                delay(500)
+            }
+        }
     }
 
     fun stopGpsRecordingAndAnalyze(context: android.content.Context? = null) {
+        flightTimerJob?.cancel()
+        flightTimerJob = null
+        _isRecordingGps.value = false
         com.example.service.GpsTrackerManager.stopTracking(context)
 
         val recordedPts = com.example.service.GpsTrackerManager.recordedPoints.toList()
@@ -503,7 +521,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
                 cleanOutliers(250.0)
             }
 
-            analyzeFlight(EpreuveType.PRECISION, ScoringRef(), _declaredTimesMap.value)
+            analyzeFlight(EpreuveType.PRECISION, _courseData.value.scoringRef, _declaredTimesMap.value)
             saveFlightToHistory()
         } else {
             _flightResult.value = FlightAnalysisResult(
@@ -529,7 +547,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
 
         // Re-analyze if trace already exists
         if (_traceCorrected.value != null || _traceRaw.value != null) {
-            analyzeFlight(EpreuveType.PRECISION, ScoringRef(), _declaredTimesMap.value)
+            analyzeFlight(EpreuveType.PRECISION, _courseData.value.scoringRef, _declaredTimesMap.value)
         }
     }
 
@@ -597,7 +615,11 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     // --- Flight Analysis ---
-    fun analyzeFlight(epreuveType: EpreuveType, ref: ScoringRef, declMap: Map<String, Double>) {
+    fun analyzeFlight(
+        epreuveType: EpreuveType = EpreuveType.PRECISION,
+        ref: ScoringRef = _courseData.value.scoringRef,
+        declMap: Map<String, Double> = _declaredTimesMap.value
+    ) {
         val trace = _traceCorrected.value ?: _traceRaw.value
         if (trace == null || trace.isEmpty()) {
             _flightResult.value = FlightAnalysisResult(
