@@ -35,12 +35,18 @@ fun AnalyseTab(
     var refDmax by remember { mutableStateOf("") }
     var refTmax by remember { mutableStateOf("") }
 
-    var wGates by remember { mutableStateOf("600") }
-    var wTime by remember { mutableStateOf("300") }
-    var wSpeed by remember { mutableStateOf("100") }
-    var wCouloir by remember { mutableStateOf("0") }
+    var wGates by remember(courseData) { mutableStateOf(courseData.scoringRef.wGates.toInt().toString()) }
+    var wTime by remember(courseData) { mutableStateOf(courseData.scoringRef.wTime.toInt().toString()) }
+    var wSpeed by remember(courseData) { mutableStateOf(courseData.scoringRef.wSpeed.toInt().toString()) }
+    var wCouloir by remember(courseData) { mutableStateOf(courseData.scoringRef.wCouloir.toInt().toString()) }
 
-    val tgPoints = remember(courseData.points) { courseData.points.filter { it.type == "tg" } }
+    val tgPoints = remember(courseData.points) {
+        courseData.points.filter {
+            val t = it.type.lowercase()
+            val id = it.id.lowercase()
+            t != "sp" && id != "sp" && (t == "tg" || t == "fp" || t == "porte" || t == "balise")
+        }
+    }
     val tgDeclarations = remember { mutableStateMapOf<String, String>() }
 
     LazyColumn(
@@ -162,14 +168,14 @@ fun AnalyseTab(
                     border = androidx.compose.foundation.BorderStroke(1.dp, DarkLine)
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("DÉCLARATION DES TEMPS (TG)", color = ColorTG, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text("Saisis les temps estimés en secondes depuis SP pour chaque porte TG.", color = InkDim, fontSize = 10.sp)
+                        Text("DÉCLARATION DES TEMPS (TG / FP)", color = ColorTG, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Saisis les temps estimés en secondes depuis SP pour chaque porte (TG, FP...).", color = InkDim, fontSize = 10.sp)
 
                         tgPoints.forEachIndexed { index, tgPt ->
                             OutlinedTextField(
                                 value = tgDeclarations[tgPt.id] ?: "",
                                 onValueChange = { tgDeclarations[tgPt.id] = it },
-                                label = { Text("TG${index + 1} (secondes)") },
+                                label = { Text("${tgPt.type.uppercase()} ${tgPt.id} (secondes)") },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = DarkPanel2, unfocusedContainerColor = DarkPanel2, focusedTextColor = InkText, unfocusedTextColor = InkText)
                             )

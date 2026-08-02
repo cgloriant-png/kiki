@@ -230,6 +230,10 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         _courseData.value = _courseData.value.copy(penalties = penalties)
     }
 
+    fun updateScoringRef(scoringRef: ScoringRef) {
+        _courseData.value = _courseData.value.copy(scoringRef = scoringRef)
+    }
+
     // Point & Vertex actions
     fun addPoint(type: String, lat: Double, lng: Double) {
         val currentPts = _courseData.value.points.toMutableList()

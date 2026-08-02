@@ -615,7 +615,7 @@ object GeometryUtils {
                 val tgResults = results.filter { 
                     val t = it.point.type.lowercase()
                     val id = it.point.id.lowercase()
-                    t != "sp" && id != "sp" && t != "fp" && id != "fp"
+                    t != "sp" && id != "sp" && (t == "tg" || t == "fp" || t == "porte" || t == "balise")
                 }
                 val spTime = if (spResult != null && spResult.validated && spResult.time != null) spResult.time else trace.firstOrNull()?.time
 
