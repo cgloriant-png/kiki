@@ -71,7 +71,14 @@ object JsonExportUtils {
             for (obj in candidates) {
                 for (key in keys) {
                     if (obj.has(key) && !obj.isNull(key)) {
-                        return obj.optDouble(key)
+                        val value = obj.get(key)
+                        if (value is Number) {
+                            val d = value.toDouble()
+                            if (!d.isNaN() && !d.isInfinite()) return d
+                        } else if (value is String) {
+                            val d = value.toDoubleOrNull()
+                            if (d != null && !d.isNaN() && !d.isInfinite()) return d
+                        }
                     }
                 }
             }
@@ -149,6 +156,9 @@ object JsonExportUtils {
 
         val points = mutableListOf<CoursePoint>()
         val ptsArr = root.optJSONArray("points")
+            ?: root.optJSONArray("portes")
+            ?: root.optJSONArray("gates")
+            ?: root.optJSONArray("balises")
         if (ptsArr != null) {
             for (i in 0 until ptsArr.length()) {
                 val pObj = ptsArr.getJSONObject(i)
