@@ -44,7 +44,7 @@ fun AnalyseTab(
         courseData.points.filter {
             val t = it.type.lowercase()
             val id = it.id.lowercase()
-            t != "sp" && id != "sp" && (t == "tg" || t == "fp" || t == "porte" || t == "balise")
+            t != "sp" && id != "sp" && (t == "tg" || t == "fp")
         }
     }
     val tgDeclarations = remember { mutableStateMapOf<String, String>() }

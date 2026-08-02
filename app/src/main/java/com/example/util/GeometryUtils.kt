@@ -589,7 +589,11 @@ object GeometryUtils {
                 bannerTxt = "Balises validées : $nbp/${cand.size} (Nbmax=${nbmax.toInt()}).$penTxt"
             }
             EpreuveType.SNAKE -> {
-                val hidden = results.filter { it.point.type.equals("porte", true) || it.point.type.equals("tg", true) }
+                val hidden = results.filter {
+                    val t = it.point.type.lowercase()
+                    val id = it.point.id.lowercase()
+                    t != "sp" && id != "sp" && (t == "porte" || t == "cachee" || t == "balise")
+                }
                 val hCount = hidden.count { it.validated }
                 val nh = hidden.size.coerceAtLeast(1)
                 val qh = 400.0 * (hCount.toDouble() / nh)
@@ -606,7 +610,8 @@ object GeometryUtils {
             EpreuveType.PRECISION -> {
                 val hidden = results.filter { 
                     val t = it.point.type.lowercase()
-                    t == "porte" || t == "tg" || t == "balise" || t == "cachee"
+                    val id = it.point.id.lowercase()
+                    t != "sp" && id != "sp" && t != "fp" && id != "fp" && t != "tg" && (t == "porte" || t == "balise" || t == "cachee")
                 }
                 val tc = hidden.count { it.validated }
                 val ntc = hidden.size.coerceAtLeast(1)
@@ -615,7 +620,7 @@ object GeometryUtils {
                 val tgResults = results.filter { 
                     val t = it.point.type.lowercase()
                     val id = it.point.id.lowercase()
-                    t != "sp" && id != "sp" && (t == "tg" || t == "fp" || t == "porte" || t == "balise")
+                    t != "sp" && id != "sp" && (t == "tg" || t == "fp")
                 }
                 val spTime = if (spResult != null && spResult.validated && spResult.time != null) spResult.time else trace.firstOrNull()?.time
 
@@ -644,8 +649,8 @@ object GeometryUtils {
 
                 val couloirRatio = if (confStats?.pctDist != null) confStats.pctDist / 100.0 else (if (confStats?.pctPts != null) confStats.pctPts / 100.0 else 0.0)
 
-                val wGates = ref.wGates
-                val wTime = ref.wTime
+                val wGates = if (hidden.isNotEmpty()) ref.wGates else 0.0
+                val wTime = if (tgResults.isNotEmpty()) ref.wTime else 0.0
                 val wSpeed = ref.wSpeed
                 val wCouloir = ref.wCouloir
 

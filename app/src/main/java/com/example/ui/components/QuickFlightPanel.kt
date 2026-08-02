@@ -308,7 +308,7 @@ fun QuickFlightPanel(
                                     val timingPoints = courseData.points.filter { 
                                         val t = it.type.lowercase()
                                         val id = it.id.lowercase()
-                                        t != "sp" && id != "sp" && (t == "tg" || t == "fp" || t == "porte" || t == "balise")
+                                        t != "sp" && id != "sp" && (t == "tg" || t == "fp")
                                     }
                                     val pointsToUse = (if (timingPoints.isNotEmpty()) timingPoints else courseData.points).filter {
                                         val t = it.type.lowercase()

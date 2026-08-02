@@ -123,7 +123,21 @@ object JsonExportUtils {
 
         val wCouloir = parsedCouloir ?: 0.0
 
-        val defaultGates = if (wCouloir > 0.0) 0.0 else 600.0
+        val ptsArr = root.optJSONArray("points") ?: root.optJSONArray("portes") ?: root.optJSONArray("gates")
+        var hasSimpleGates = false
+        if (ptsArr != null) {
+            for (i in 0 until ptsArr.length()) {
+                val p = ptsArr.optJSONObject(i)
+                val t = p?.optString("type", "")?.lowercase() ?: ""
+                val id = p?.optString("id", "")?.lowercase() ?: ""
+                if (t != "sp" && id != "sp" && t != "fp" && id != "fp" && t != "tg" && (t == "porte" || t == "cachee" || t == "balise")) {
+                    hasSimpleGates = true
+                    break
+                }
+            }
+        }
+
+        val defaultGates = if (hasSimpleGates && wCouloir == 0.0) 600.0 else 0.0
         val defaultTime = if (wCouloir > 0.0) 200.0 else 300.0
 
         val wGates = parsedGates ?: defaultGates
