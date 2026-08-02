@@ -52,20 +52,45 @@ object JsonExportUtils {
         course.scoringRef.dmax?.let { scObj.put("dmax", it) }
         root.put("scoringRef", scObj)
 
+        val epConfig = JSONObject()
+        epConfig.put("type", course.epreuveType.code)
+        epConfig.put("ref", scObj)
+        root.put("epreuveConfig", epConfig)
+
         return root.toString(2)
     }
 
     private fun parseScoringRef(root: JSONObject): ScoringRef {
-        val candidates = listOfNotNull(
-            root.optJSONObject("scoringRef"),
-            root.optJSONObject("bareme"),
-            root.optJSONObject("baremeEpreuve"),
-            root.optJSONObject("scoring"),
-            root.optJSONObject("points"),
-            root.optJSONObject("weights"),
-            root.optJSONObject("ref"),
-            root
-        )
+        val candidates = mutableListOf<JSONObject>()
+
+        fun addIfNotNull(obj: JSONObject?) {
+            if (obj != null && !candidates.contains(obj)) {
+                candidates.add(obj)
+            }
+        }
+
+        addIfNotNull(root.optJSONObject("epreuveConfig")?.optJSONObject("ref"))
+        addIfNotNull(root.optJSONObject("epreuveConfig")?.optJSONObject("scoringRef"))
+        addIfNotNull(root.optJSONObject("epreuveConfig")?.optJSONObject("scoring"))
+        addIfNotNull(root.optJSONObject("scoringRef"))
+        addIfNotNull(root.optJSONObject("epreuveConfig"))
+        addIfNotNull(root.optJSONObject("bareme"))
+        addIfNotNull(root.optJSONObject("baremeEpreuve"))
+        addIfNotNull(root.optJSONObject("scoring"))
+        addIfNotNull(root.optJSONObject("ref"))
+        addIfNotNull(root.optJSONObject("weights"))
+
+        val keys = root.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            val child = root.optJSONObject(k)
+            addIfNotNull(child)
+            if (child != null) {
+                addIfNotNull(child.optJSONObject("ref"))
+                addIfNotNull(child.optJSONObject("scoringRef"))
+            }
+        }
+        addIfNotNull(root)
 
         fun findDouble(keys: List<String>): Double? {
             for (obj in candidates) {
@@ -217,7 +242,14 @@ object JsonExportUtils {
 
         val scoringRef = parseScoringRef(root)
 
-        return CourseData(name, points, verts, corridorWidth, penalties, scoringRef)
+        val epreuveConfig = root.optJSONObject("epreuveConfig")
+        val epreuveTypeCode = epreuveConfig?.optString("type")
+            ?: root.optString("epreuveType")
+            ?: root.optString("type")
+            ?: if (scoringRef.wTime > 0) "precision" else if (scoringRef.wGates > 0) "snake" else "pure"
+        val epreuveType = EpreuveType.fromCode(epreuveTypeCode)
+
+        return CourseData(name, points, verts, corridorWidth, penalties, scoringRef, epreuveType)
     }
 
     fun serializeCompetition(comp: CompetitionData): String {

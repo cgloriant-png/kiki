@@ -525,7 +525,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
                 cleanOutliers(250.0)
             }
 
-            analyzeFlight(EpreuveType.PRECISION, _courseData.value.scoringRef, _declaredTimesMap.value)
+            analyzeFlight(_courseData.value.epreuveType, _courseData.value.scoringRef, _declaredTimesMap.value)
             saveFlightToHistory()
         } else {
             _flightResult.value = FlightAnalysisResult(
@@ -551,7 +551,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
 
         // Re-analyze if trace already exists
         if (_traceCorrected.value != null || _traceRaw.value != null) {
-            analyzeFlight(EpreuveType.PRECISION, _courseData.value.scoringRef, _declaredTimesMap.value)
+            analyzeFlight(_courseData.value.epreuveType, _courseData.value.scoringRef, _declaredTimesMap.value)
         }
     }
 
@@ -620,7 +620,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
 
     // --- Flight Analysis ---
     fun analyzeFlight(
-        epreuveType: EpreuveType = EpreuveType.PRECISION,
+        epreuveType: EpreuveType = _courseData.value.epreuveType,
         ref: ScoringRef = _courseData.value.scoringRef,
         declMap: Map<String, Double> = _declaredTimesMap.value
     ) {

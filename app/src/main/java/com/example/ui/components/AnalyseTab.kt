@@ -26,7 +26,7 @@ fun AnalyseTab(
     onAnalyzeFlight: (EpreuveType, ScoringRef, Map<String, Double>) -> Unit,
     onSaveToHistory: () -> Unit
 ) {
-    var selectedEpreuve by remember { mutableStateOf(EpreuveType.PURE) }
+    var selectedEpreuve by remember(courseData) { mutableStateOf(courseData.epreuveType) }
 
     // Scoring reference values
     var refMaxTimeMin by remember { mutableStateOf("") }
