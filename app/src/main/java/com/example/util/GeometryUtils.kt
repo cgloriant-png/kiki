@@ -177,39 +177,87 @@ object GeometryUtils {
         return indices.map { points[it] }
     }
 
-    fun removeOutliers(points: List<GpxPoint>, maxKmh: Double = 250.0): List<GpxPoint> {
+    fun removeOutliers(points: List<GpxPoint>, maxKmh: Double = 180.0): List<GpxPoint> {
         if (points.size < 3) return points.toList()
-        val result = mutableListOf(points[0])
-        var consecutiveSkips = 0
 
-        for (i in 1 until points.size) {
-            val prev = result.last()
-            val cur = points[i]
-            if (prev.time != null && cur.time != null) {
-                val dt = (cur.time - prev.time) / 1000.0
-                if (dt <= 0) {
-                    result.add(cur)
-                    consecutiveSkips = 0
-                    continue
-                }
-                val speed = (haversine(prev.lat, prev.lng, cur.lat, cur.lng) / dt) * 3.6
-                if (speed > maxKmh && consecutiveSkips < 2) {
-                    if (i + 1 < points.size && points[i + 1].time != null) {
-                        val dtNext = (points[i + 1].time!! - prev.time) / 1000.0
-                        if (dtNext > 0) {
-                            val speedNext = (haversine(prev.lat, prev.lng, points[i + 1].lat, points[i + 1].lng) / dtNext) * 3.6
-                            if (speedNext <= maxKmh) {
-                                consecutiveSkips++
-                                continue
+        var currentList = points.filter { p -> p.lat != 0.0 || p.lng != 0.0 }
+        if (currentList.size < 3) return currentList
+
+        var pass = 0
+        val maxPasses = 5
+        var changed = true
+
+        while (changed && pass < maxPasses && currentList.size >= 3) {
+            pass++
+            changed = false
+            val filtered = mutableListOf<GpxPoint>()
+            filtered.add(currentList.first())
+
+            var i = 1
+            while (i < currentList.size) {
+                val prev = filtered.last()
+                val cur = currentList[i]
+                val next = if (i + 1 < currentList.size) currentList[i + 1] else null
+
+                var isSpike = false
+
+                // 1. Check speed jump
+                if (prev.time != null && cur.time != null) {
+                    val dt = (cur.time - prev.time) / 1000.0
+                    if (dt > 0) {
+                        val speedKmh = (haversine(prev.lat, prev.lng, cur.lat, cur.lng) / dt) * 3.6
+                        if (speedKmh > maxKmh) {
+                            var resolved = false
+                            for (lookahead in 1..4) {
+                                if (i + lookahead < currentList.size) {
+                                    val candidateNext = currentList[i + lookahead]
+                                    if (candidateNext.time != null) {
+                                        val dtNext = (candidateNext.time - prev.time) / 1000.0
+                                        if (dtNext > 0) {
+                                            val speedNext = (haversine(prev.lat, prev.lng, candidateNext.lat, candidateNext.lng) / dtNext) * 3.6
+                                            if (speedNext <= maxKmh) {
+                                                isSpike = true
+                                                resolved = true
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (!resolved && speedKmh > 300.0) {
+                                isSpike = true
                             }
                         }
                     }
                 }
+
+                // 2. Check sharp geometric triangle spike (out and back jump)
+                if (!isSpike && next != null) {
+                    val d1 = haversine(prev.lat, prev.lng, cur.lat, cur.lng)
+                    val d2 = haversine(cur.lat, cur.lng, next.lat, next.lng)
+                    val dDirect = haversine(prev.lat, prev.lng, next.lat, next.lng)
+                    if (d1 > 80.0 && d2 > 80.0 && (d1 + d2) > 2.5 * dDirect) {
+                        isSpike = true
+                    }
+                }
+
+                if (isSpike) {
+                    changed = true
+                    i++
+                } else {
+                    filtered.add(cur)
+                    i++
+                }
             }
-            result.add(cur)
-            consecutiveSkips = 0
+
+            if (filtered.size < currentList.size) {
+                currentList = filtered
+            } else {
+                changed = false
+            }
         }
-        return result
+
+        return currentList
     }
 
     fun totalDistance(pts: List<GpxPoint>): Double {
@@ -436,8 +484,53 @@ object GeometryUtils {
         val cl = centerlineDenseGeo(courseData, origin)
         if (trace.isEmpty() || cl.size < 2) return null
 
-        val startIdx = (spIndex ?: 0).coerceIn(0, trace.size - 1)
-        val endIdx = (fpIndex ?: (trace.size - 1)).coerceIn(startIdx, trace.size - 1)
+        // Determine start index (entry gate SP)
+        var startIdx: Int? = spIndex
+        if (startIdx == null) {
+            val spPoint = courseData.points.find { it.type.equals("SP", true) || it.id.equals("SP", true) }
+            if (spPoint != null) {
+                var minDist = Double.MAX_VALUE
+                var bestIdx = 0
+                for (i in trace.indices) {
+                    val d = haversine(trace[i].lat, trace[i].lng, spPoint.lat, spPoint.lng)
+                    if (d < minDist) {
+                        minDist = d
+                        bestIdx = i
+                    }
+                }
+                startIdx = bestIdx
+            } else {
+                startIdx = 0
+            }
+        }
+        startIdx = startIdx.coerceIn(0, trace.size - 1)
+
+        // Determine end index (exit gate FP or last gate)
+        var endIdx: Int? = fpIndex
+        if (endIdx == null) {
+            val lastGate = courseData.points.find { it.type.equals("FP", true) || it.id.equals("FP", true) }
+                ?: courseData.points.lastOrNull { p ->
+                    val t = p.type.lowercase()
+                    val id = p.id.lowercase()
+                    t != "sp" && id != "sp"
+                }
+
+            if (lastGate != null) {
+                var minDist = Double.MAX_VALUE
+                var bestIdx = trace.size - 1
+                for (i in startIdx until trace.size) {
+                    val d = haversine(trace[i].lat, trace[i].lng, lastGate.lat, lastGate.lng)
+                    if (d < minDist) {
+                        minDist = d
+                        bestIdx = i
+                    }
+                }
+                endIdx = bestIdx
+            } else {
+                endIdx = trace.size - 1
+            }
+        }
+        endIdx = endIdx.coerceIn(startIdx, trace.size - 1)
 
         val activeTrace = if (endIdx > startIdx) trace.subList(startIdx, endIdx + 1) else trace
         if (activeTrace.size < 2) return null
@@ -460,23 +553,37 @@ object GeometryUtils {
             val segDist = haversine(activeTrace[i - 1].lat, activeTrace[i - 1].lng, activeTrace[i].lat, activeTrace[i].lng)
             val dA = distToPolyline(traceLocal[i - 1], clLocal)
             val dB = distToPolyline(traceLocal[i], clLocal)
-            val bothIn = (dA <= half && dB <= half)
+
+            val frac = when {
+                dA <= half && dB <= half -> 1.0
+                dA > half && dB > half -> 0.0
+                else -> {
+                    val dMin = min(dA, dB)
+                    val dMax = max(dA, dB)
+                    if (dMax > dMin) ((half - dMin) / (dMax - dMin)).coerceIn(0.0, 1.0) else 0.5
+                }
+            }
+
             totalDist += segDist
-            if (bothIn) insideDist += segDist
+            insideDist += segDist * frac
 
             if (activeTrace[i - 1].time != null && activeTrace[i].time != null) {
                 val dt = (activeTrace[i].time!! - activeTrace[i - 1].time!!) / 1000.0
                 if (dt > 0) {
                     totalTime += dt
-                    if (bothIn) insideTime += dt
+                    insideTime += dt * frac
                 }
             }
         }
 
+        val pctTimeVal = if (totalTime > 0) (100.0 * insideTime / totalTime).roundToInt() else null
+        val pctDistVal = if (totalDist > 0) (100.0 * insideDist / totalDist).roundToInt() else null
+        val pctPtsVal = (100.0 * insidePts / activeTrace.size).roundToInt()
+
         return ConformityStats(
-            pctPts = (100.0 * insidePts / activeTrace.size).roundToInt(),
-            pctDist = if (totalDist > 0) (100.0 * insideDist / totalDist).roundToInt() else null,
-            pctTime = if (totalTime > 0) (100.0 * insideTime / totalTime).roundToInt() else null
+            pctPts = pctPtsVal,
+            pctDist = pctDistVal,
+            pctTime = pctTimeVal
         )
     }
 
@@ -647,7 +754,15 @@ object GeometryUtils {
                     sTxt = " · Vitesse : ${(speedRatio * 100).roundToInt()}%"
                 }
 
-                val couloirRatio = if (confStats?.pctDist != null) confStats.pctDist / 100.0 else (if (confStats?.pctPts != null) confStats.pctPts / 100.0 else 0.0)
+                val couloirRatio = if (confStats?.pctTime != null) {
+                    confStats.pctTime / 100.0
+                } else if (confStats?.pctDist != null) {
+                    confStats.pctDist / 100.0
+                } else if (confStats?.pctPts != null) {
+                    confStats.pctPts / 100.0
+                } else {
+                    0.0
+                }
 
                 val wGates = if (hidden.isNotEmpty()) ref.wGates else 0.0
                 val wTime = if (tgResults.isNotEmpty()) ref.wTime else 0.0
@@ -691,7 +806,7 @@ object GeometryUtils {
 
                 val bannerParts = mutableListOf<String>()
                 if (wCouloir > 0) {
-                    val pct = confStats?.pctDist ?: confStats?.pctPts ?: 0
+                    val pct = confStats?.pctTime ?: confStats?.pctDist ?: confStats?.pctPts ?: 0
                     bannerParts.add("Parcours couloir : $pct% ($couloirPts/${wCouloir.toInt()} pts)")
                 }
                 if (wGates > 0) {

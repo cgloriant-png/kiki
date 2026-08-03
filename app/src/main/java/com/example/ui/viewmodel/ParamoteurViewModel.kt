@@ -560,7 +560,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         val points = GpxParser.parse(inputStream)
         if (points.isNotEmpty()) {
             _traceRaw.value = points
-            _traceCorrected.value = points
+            _traceCorrected.value = GeometryUtils.removeOutliers(points, 180.0)
             recalculateConformity()
         }
     }
@@ -789,13 +789,13 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
             )
 
             val res = GeometryUtils.scoreFlight(course, trace, epreuve, ref)
-            val conf = GeometryUtils.conformity(course, trace)
+            val conf = res.corridorStats ?: GeometryUtils.conformity(course, trace)
 
             val mResult = MancheResult(
                 score = res.score,
                 distMeters = res.distMeters,
                 durationSeconds = res.durationSeconds,
-                pctDist = conf?.pctDist,
+                pctDist = conf?.pctTime ?: conf?.pctDist,
                 dateIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date()),
                 simulated = simulated,
                 breakdown = res.breakdown

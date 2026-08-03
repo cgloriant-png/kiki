@@ -155,7 +155,7 @@ class MainActivity : ComponentActivity() {
                             onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
                             pointsCount = courseData.points.size,
                             traceDistanceMeters = (traceCorrected ?: traceRaw)?.let { GeometryUtils.totalDistance(it) },
-                            corridorPct = conformity?.pctDist ?: conformity?.pctPts,
+                            corridorPct = conformity?.pctTime ?: conformity?.pctDist ?: conformity?.pctPts,
                             flightScore = flightResult?.score
                         )
                     }

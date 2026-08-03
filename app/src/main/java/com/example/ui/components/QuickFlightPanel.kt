@@ -594,7 +594,7 @@ fun QuickFlightPanel(
                                                     )
                                                 }
                                                 Text(
-                                                    text = "${stats.pctDist ?: stats.pctPts}% de la trace",
+                                                    text = "${stats.pctTime ?: stats.pctDist ?: stats.pctPts}% dans le couloir",
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.ExtraBold,
                                                     color = GreenSuccess
