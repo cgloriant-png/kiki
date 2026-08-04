@@ -378,9 +378,47 @@ object GeometryUtils {
         courseData: CourseData,
         origin: LatLng
     ): List<PointValidationResult> {
-        var pointer = 0
         val results = mutableListOf<PointValidationResult>()
         val traceLocal = trace.map { toXY(LatLng(it.lat, it.lng), origin) }
+
+        var spTraceIndex: Int? = null
+
+        val spPoint = courseData.points.find { it.type.equals("SP", true) || it.id.equals("SP", true) }
+        if (spPoint != null) {
+            val frame = gateFrameFor(spPoint, courseData, origin)
+            val halfWidth = (spPoint.width / 2.0).coerceAtLeast(50.0)
+            val pLocal = toXY(LatLng(spPoint.lat, spPoint.lng), origin)
+
+            for (i in 1 until traceLocal.size) {
+                val a = traceLocal[i - 1]
+                val b = traceLocal[i]
+                val dA = (a.x - frame.local.x) * frame.dir.x + (a.y - frame.local.y) * frame.dir.y
+                val dB = (b.x - frame.local.x) * frame.dir.x + (b.y - frame.local.y) * frame.dir.y
+                val crossed = (dA < 0 && dB >= 0) || (dA >= 0 && dB <= 0)
+                if (crossed) {
+                    val denominator = (dA - dB)
+                    val t = if (abs(denominator) > 1e-6) (dA / denominator).coerceIn(0.0, 1.0) else 0.5
+                    val xCross = Point2D(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
+                    val offset = (xCross.x - frame.local.x) * frame.perp.x + (xCross.y - frame.local.y) * frame.perp.y
+                    if (abs(offset) <= halfWidth) {
+                        spTraceIndex = i
+                        break
+                    }
+                }
+                val dx = b.x - a.x
+                val dy = b.y - a.y
+                val len2 = dx * dx + dy * dy
+                val projT = if (len2 > 1e-6) (((pLocal.x - a.x) * dx + (pLocal.y - a.y) * dy) / len2).coerceIn(0.0, 1.0) else 0.5
+                val projX = a.x + projT * dx
+                val projY = a.y + projT * dy
+                if (hypot(projX - pLocal.x, projY - pLocal.y) <= halfWidth) {
+                    spTraceIndex = i
+                    break
+                }
+            }
+        }
+
+        var lastGateTraceIndex = spTraceIndex ?: 0
 
         courseData.points.forEach { p ->
             var foundIdx: Int? = null
@@ -388,65 +426,76 @@ object GeometryUtils {
             val pLocal = toXY(LatLng(p.lat, p.lng), origin)
             val isCircle = p.type.equals("balise", true) || p.type.equals("cachee", true)
 
+            val candidates = mutableListOf<Pair<Int, Long?>>()
+
             if (isCircle) {
                 val searchRadius = if (p.radius > 0) p.radius else 150.0
-                for (i in pointer until traceLocal.size) {
+                for (i in 0 until traceLocal.size) {
                     val d = hypot(traceLocal[i].x - pLocal.x, traceLocal[i].y - pLocal.y)
                     if (d <= searchRadius) {
-                        foundIdx = i
-                        foundTime = trace[i].time
-                        break
+                        candidates.add(Pair(i, trace[i].time))
                     }
                 }
             } else {
                 val frame = gateFrameFor(p, courseData, origin)
                 val halfWidth = (p.width / 2.0).coerceAtLeast(50.0)
 
-                for (i in max(pointer, 1) until traceLocal.size) {
+                for (i in 1 until traceLocal.size) {
                     val a = traceLocal[i - 1]
                     val b = traceLocal[i]
                     val dA = (a.x - frame.local.x) * frame.dir.x + (a.y - frame.local.y) * frame.dir.y
                     val dB = (b.x - frame.local.x) * frame.dir.x + (b.y - frame.local.y) * frame.dir.y
 
                     val crossed = (dA < 0 && dB >= 0) || (dA >= 0 && dB <= 0)
+                    var matched = false
+                    var tMatch = 0.5
+
                     if (crossed) {
                         val denominator = (dA - dB)
-                        val t = if (abs(denominator) > 1e-6) (dA / denominator).coerceIn(0.0, 1.0) else 0.5
-                        val xCross = Point2D(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
+                        tMatch = if (abs(denominator) > 1e-6) (dA / denominator).coerceIn(0.0, 1.0) else 0.5
+                        val xCross = Point2D(a.x + tMatch * (b.x - a.x), a.y + tMatch * (b.y - a.y))
                         val offset = (xCross.x - frame.local.x) * frame.perp.x + (xCross.y - frame.local.y) * frame.perp.y
                         if (abs(offset) <= halfWidth) {
-                            foundIdx = i
-                            val timeA = trace[i - 1].time
-                            val timeB = trace[i].time
-                            if (timeA != null && timeB != null && timeB >= timeA) {
-                                foundTime = (timeA + t * (timeB - timeA)).toLong()
-                            } else {
-                                foundTime = timeB ?: timeA
-                            }
-                            break
+                            matched = true
                         }
                     }
 
-                    // Backup check: distance from segment to gate center
-                    val dx = b.x - a.x
-                    val dy = b.y - a.y
-                    val len2 = dx * dx + dy * dy
-                    val projT = if (len2 > 1e-6) (((pLocal.x - a.x) * dx + (pLocal.y - a.y) * dy) / len2).coerceIn(0.0, 1.0) else 0.5
-                    val projX = a.x + projT * dx
-                    val projY = a.y + projT * dy
-                    val distToCenter = hypot(projX - pLocal.x, projY - pLocal.y)
+                    if (!matched) {
+                        val dx = b.x - a.x
+                        val dy = b.y - a.y
+                        val len2 = dx * dx + dy * dy
+                        val projT = if (len2 > 1e-6) (((pLocal.x - a.x) * dx + (pLocal.y - a.y) * dy) / len2).coerceIn(0.0, 1.0) else 0.5
+                        val projX = a.x + projT * dx
+                        val projY = a.y + projT * dy
+                        if (hypot(projX - pLocal.x, projY - pLocal.y) <= halfWidth) {
+                            matched = true
+                            tMatch = projT
+                        }
+                    }
 
-                    if (distToCenter <= halfWidth) {
-                        foundIdx = i
+                    if (matched) {
                         val timeA = trace[i - 1].time
                         val timeB = trace[i].time
-                        if (timeA != null && timeB != null && timeB >= timeA) {
-                            foundTime = (timeA + projT * (timeB - timeA)).toLong()
+                        val cTime = if (timeA != null && timeB != null && timeB >= timeA) {
+                            (timeA + tMatch * (timeB - timeA)).toLong()
                         } else {
-                            foundTime = timeB ?: timeA
+                            timeB ?: timeA
                         }
-                        break
+                        candidates.add(Pair(i, cTime))
                     }
+                }
+            }
+
+            if (candidates.isNotEmpty()) {
+                val best = candidates.find { it.first >= lastGateTraceIndex }
+                    ?: (if (spTraceIndex != null) candidates.find { it.first >= spTraceIndex } else null)
+                    ?: candidates.first()
+
+                foundIdx = best.first
+                foundTime = best.second
+
+                if (!isCircle) {
+                    lastGateTraceIndex = max(lastGateTraceIndex, foundIdx)
                 }
             }
 
@@ -459,7 +508,6 @@ object GeometryUtils {
                         time = foundTime ?: trace[foundIdx].time
                     )
                 )
-                pointer = foundIdx
             } else {
                 results.add(
                     PointValidationResult(
@@ -613,29 +661,105 @@ object GeometryUtils {
 
         if (startIdx >= endIdx) return BacktrackResult(false)
 
+        // 1. Centerline distance accumulation array
+        val sCenterline = DoubleArray(clLocal.size)
+        sCenterline[0] = 0.0
+        for (j in 1 until clLocal.size) {
+            val dx = clLocal[j].x - clLocal[j - 1].x
+            val dy = clLocal[j].y - clLocal[j - 1].y
+            sCenterline[j] = sCenterline[j - 1] + hypot(dx, dy)
+        }
+
+        fun getCenterlineS(p: Point2D): Pair<Double, Double> {
+            var minDist = Double.MAX_VALUE
+            var bestS = 0.0
+            for (j in 0 until clLocal.size - 1) {
+                val a = clLocal[j]
+                val b = clLocal[j + 1]
+                val dx = b.x - a.x
+                val dy = b.y - a.y
+                val len2 = dx * dx + dy * dy
+                val t = if (len2 > 1e-6) (((p.x - a.x) * dx + (p.y - a.y) * dy) / len2).coerceIn(0.0, 1.0) else 0.0
+                val projX = a.x + t * dx
+                val projY = a.y + t * dy
+                val d = hypot(p.x - projX, p.y - projY)
+                if (d < minDist) {
+                    minDist = d
+                    bestS = sCenterline[j] + t * sqrt(len2)
+                }
+            }
+            return Pair(bestS, minDist)
+        }
+
+        var maxS = 0.0
+        var insideCount = 0
+
         for (i in startIdx..endIdx) {
-            if (distToPolyline(traceLocal[i], clLocal) > half) continue
-
-            val pPrev = traceLocal[i - 1]
             val pCur = traceLocal[i]
-            val pNext = traceLocal[i + 1]
+            val (sVal, dToCL) = getCenterlineS(pCur)
 
-            val v1 = Point2D(pCur.x - pPrev.x, pCur.y - pPrev.y)
-            val v2 = Point2D(pNext.x - pCur.x, pNext.y - pCur.y)
-            val l1 = hypot(v1.x, v1.y)
-            val l2 = hypot(v2.x, v2.y)
+            // Centerline reverse progress check
+            if (dToCL <= half + 20.0) {
+                if (insideCount == 0) {
+                    maxS = sVal
+                } else {
+                    if (sVal > maxS) {
+                        maxS = sVal
+                    } else if (maxS - sVal > 25.0) {
+                        val loc = LatLng(trace[i].lat, trace[i].lng)
+                        val distBack = (maxS - sVal).roundToInt()
+                        return BacktrackResult(
+                            hasBacktrack = true,
+                            location = loc,
+                            description = "Demi-tour / Retour en arrière dans le couloir (recul de ${distBack}m)"
+                        )
+                    }
+                }
+                insideCount++
+            }
 
-            // Ignore micro GPS noise (jitter < 8.0 meters)
-            if (l1 < 8.0 || l2 < 8.0) continue
+            // 3-point angle check
+            if (i >= 1 && i + 1 < traceLocal.size && dToCL <= half) {
+                val pPrev = traceLocal[i - 1]
+                val pNext = traceLocal[i + 1]
 
-            val cosInterior = -(v1.x * v2.x + v1.y * v2.y) / (l1 * l2)
-            if (cosInterior > thresholdCos) {
-                val loc = LatLng(trace[i].lat, trace[i].lng)
-                return BacktrackResult(
-                    hasBacktrack = true,
-                    location = loc,
-                    description = "Demi-tour / Retour en arrière (angle < ${thresholdDeg.toInt()}°)"
-                )
+                val v1 = Point2D(pCur.x - pPrev.x, pCur.y - pPrev.y)
+                val v2 = Point2D(pNext.x - pCur.x, pNext.y - pCur.y)
+                val l1 = hypot(v1.x, v1.y)
+                val l2 = hypot(v2.x, v2.y)
+
+                if (l1 >= 8.0 && l2 >= 8.0) {
+                    val cosInterior = -(v1.x * v2.x + v1.y * v2.y) / (l1 * l2)
+                    if (cosInterior > thresholdCos) {
+                        val loc = LatLng(trace[i].lat, trace[i].lng)
+                        return BacktrackResult(
+                            hasBacktrack = true,
+                            location = loc,
+                            description = "Demi-tour / Angle aigu dans le couloir (< ${thresholdDeg.toInt()}°)"
+                        )
+                    }
+                }
+
+                // Windowed check for smooth U-turns (looking 3 points back and 3 points forward)
+                if (i >= 3 && i + 3 < traceLocal.size) {
+                    val pPrevWin = traceLocal[i - 3]
+                    val pNextWin = traceLocal[i + 3]
+                    val vw1 = Point2D(pCur.x - pPrevWin.x, pCur.y - pPrevWin.y)
+                    val vw2 = Point2D(pNextWin.x - pCur.x, pNextWin.y - pCur.y)
+                    val lw1 = hypot(vw1.x, vw1.y)
+                    val lw2 = hypot(vw2.x, vw2.y)
+                    if (lw1 >= 15.0 && lw2 >= 15.0) {
+                        val cosWin = -(vw1.x * vw2.x + vw1.y * vw2.y) / (lw1 * lw2)
+                        if (cosWin > cos(toRad(110.0))) {
+                            val loc = LatLng(trace[i].lat, trace[i].lng)
+                            return BacktrackResult(
+                                hasBacktrack = true,
+                                location = loc,
+                                description = "Demi-tour / Virage en boucle dans le couloir"
+                            )
+                        }
+                    }
+                }
             }
         }
         return BacktrackResult(false)
