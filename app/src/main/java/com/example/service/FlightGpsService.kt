@@ -85,7 +85,7 @@ class FlightGpsService : Service() {
         }
 
         startGpsTracking()
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun startGpsTracking() {
@@ -181,7 +181,7 @@ class FlightGpsService : Service() {
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
     }
 
@@ -191,7 +191,7 @@ class FlightGpsService : Service() {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     "Enregistrement Vol GPS",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
                     description = "Notification permanente de suivi GPS du vol"
                 }

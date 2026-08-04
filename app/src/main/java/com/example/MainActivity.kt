@@ -84,6 +84,8 @@ class MainActivity : ComponentActivity() {
                     viewModel.setTileProvider(MapTileProvider.IGN_PLAN)
                 }
 
+                var showBatteryDialog by remember { mutableStateOf(false) }
+
                 // Permission Launcher for GPS & Notifications
                 val locationPermissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -98,6 +100,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun proceedStartGps() {
+                    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+                    val isIgnoringBattery = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                        powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+                    } else true
+
+                    if (!isIgnoringBattery) {
+                        showBatteryDialog = true
+                    } else {
+                        viewModel.startGpsRecording(context)
+                        Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
                 fun startFlightGps() {
                     val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
                         context,
@@ -109,13 +125,15 @@ class MainActivity : ComponentActivity() {
                     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
                     if (fineGranted || coarseGranted) {
-                        viewModel.startGpsRecording(context)
-                        Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
+                        proceedStartGps()
                     } else {
                         val permsToRequest = mutableListOf(
                             android.Manifest.permission.ACCESS_FINE_LOCATION,
                             android.Manifest.permission.ACCESS_COARSE_LOCATION
                         )
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            permsToRequest.add(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                        }
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                             permsToRequest.add(android.Manifest.permission.POST_NOTIFICATIONS)
                         }
@@ -346,6 +364,46 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+
+                if (showBatteryDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showBatteryDialog = false },
+                        title = { Text("🔋 GPS en veille & batterie") },
+                        text = {
+                            Text(
+                                "Pour éviter que Android/Xiaomi/Samsung ne coupaient le GPS lors de la mise en veille (écran éteint) pendant le vol :\n\n" +
+                                "1. Désactivez l'économie de batterie pour Paramoteur ('Pas de restriction').\n" +
+                                "2. Autorisez la localisation 'Toujours autoriser en arrière-plan'."
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showBatteryDialog = false
+                                viewModel.startGpsRecording(context)
+                                Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Text("Démarrer le Vol")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            }) {
+                                Text("⚙️ Réglages Batterie")
+                            }
+                        }
+                    )
                 }
             }
         }
