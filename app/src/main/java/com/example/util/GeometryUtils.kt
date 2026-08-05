@@ -525,7 +525,7 @@ object GeometryUtils {
 
             if (spCandidates.isNotEmpty()) {
                 val flightCandidates = spCandidates.filter { it.second >= 5.0 }
-                val chosen = flightCandidates.lastOrNull() ?: spCandidates.first()
+                val chosen = flightCandidates.firstOrNull() ?: spCandidates.first()
                 spTraceIndex = chosen.first
             }
         }
