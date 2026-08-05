@@ -180,7 +180,38 @@ object GeometryUtils {
     fun removeOutliers(points: List<GpxPoint>, maxKmh: Double = 180.0): List<GpxPoint> {
         if (points.size < 3) return points.toList()
 
-        var currentList = points.filter { p -> p.lat != 0.0 || p.lng != 0.0 }
+        var currentList = points.filter { p -> (p.lat != 0.0 || p.lng != 0.0) && abs(p.lat) <= 90.0 && abs(p.lng) <= 180.0 }
+        if (currentList.size < 3) return currentList
+
+        // Remove initial aberrant points (early GPS fix jumps before lock)
+        while (currentList.size >= 3) {
+            val p0 = currentList[0]
+            val p1 = currentList[1]
+            val p2 = currentList[2]
+
+            var isP0Spike = false
+            if (p0.time != null && p1.time != null) {
+                val dt = (p1.time - p0.time) / 1000.0
+                if (dt > 0) {
+                    val speed01 = (haversine(p0.lat, p0.lng, p1.lat, p1.lng) / dt) * 3.6
+                    if (speed01 > maxKmh) isP0Spike = true
+                } else if (dt == 0.0) {
+                    val dist01 = haversine(p0.lat, p0.lng, p1.lat, p1.lng)
+                    if (dist01 > 50.0) isP0Spike = true
+                }
+            } else {
+                val dist01 = haversine(p0.lat, p0.lng, p1.lat, p1.lng)
+                val dist12 = haversine(p1.lat, p1.lng, p2.lat, p2.lng)
+                if (dist01 > 300.0 && dist12 < 100.0) isP0Spike = true
+            }
+
+            if (isP0Spike) {
+                currentList = currentList.drop(1)
+            } else {
+                break
+            }
+        }
+
         if (currentList.size < 3) return currentList
 
         var pass = 0
@@ -224,7 +255,7 @@ object GeometryUtils {
                                     }
                                 }
                             }
-                            if (!resolved && speedKmh > 300.0) {
+                            if (!resolved && speedKmh > 250.0) {
                                 isSpike = true
                             }
                         }
@@ -236,7 +267,7 @@ object GeometryUtils {
                     val d1 = haversine(prev.lat, prev.lng, cur.lat, cur.lng)
                     val d2 = haversine(cur.lat, cur.lng, next.lat, next.lng)
                     val dDirect = haversine(prev.lat, prev.lng, next.lat, next.lng)
-                    if (d1 > 80.0 && d2 > 80.0 && (d1 + d2) > 2.5 * dDirect) {
+                    if (d1 > 50.0 && d2 > 50.0 && (d1 + d2) > 2.2 * dDirect) {
                         isSpike = true
                     }
                 }
@@ -389,32 +420,52 @@ object GeometryUtils {
             val halfWidth = (spPoint.width / 2.0).coerceAtLeast(50.0)
             val pLocal = toXY(LatLng(spPoint.lat, spPoint.lng), origin)
 
+            val spCandidates = mutableListOf<Pair<Int, Double>>()
+
             for (i in 1 until traceLocal.size) {
                 val a = traceLocal[i - 1]
                 val b = traceLocal[i]
                 val dA = (a.x - frame.local.x) * frame.dir.x + (a.y - frame.local.y) * frame.dir.y
                 val dB = (b.x - frame.local.x) * frame.dir.x + (b.y - frame.local.y) * frame.dir.y
                 val crossed = (dA < 0 && dB >= 0) || (dA >= 0 && dB <= 0)
+                var matched = false
+
                 if (crossed) {
                     val denominator = (dA - dB)
                     val t = if (abs(denominator) > 1e-6) (dA / denominator).coerceIn(0.0, 1.0) else 0.5
                     val xCross = Point2D(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
                     val offset = (xCross.x - frame.local.x) * frame.perp.x + (xCross.y - frame.local.y) * frame.perp.y
                     if (abs(offset) <= halfWidth) {
-                        spTraceIndex = i
-                        break
+                        matched = true
                     }
                 }
-                val dx = b.x - a.x
-                val dy = b.y - a.y
-                val len2 = dx * dx + dy * dy
-                val projT = if (len2 > 1e-6) (((pLocal.x - a.x) * dx + (pLocal.y - a.y) * dy) / len2).coerceIn(0.0, 1.0) else 0.5
-                val projX = a.x + projT * dx
-                val projY = a.y + projT * dy
-                if (hypot(projX - pLocal.x, projY - pLocal.y) <= halfWidth) {
-                    spTraceIndex = i
-                    break
+                if (!matched) {
+                    val dx = b.x - a.x
+                    val dy = b.y - a.y
+                    val len2 = dx * dx + dy * dy
+                    val projT = if (len2 > 1e-6) (((pLocal.x - a.x) * dx + (pLocal.y - a.y) * dy) / len2).coerceIn(0.0, 1.0) else 0.5
+                    val projX = a.x + projT * dx
+                    val projY = a.y + projT * dy
+                    if (hypot(projX - pLocal.x, projY - pLocal.y) <= halfWidth) {
+                        matched = true
+                    }
                 }
+
+                if (matched) {
+                    var speedKmh = 20.0
+                    val tA = trace[i - 1].time
+                    val tB = trace[i].time
+                    if (tA != null && tB != null && tB > tA) {
+                        speedKmh = (haversine(trace[i - 1].lat, trace[i - 1].lng, trace[i].lat, trace[i].lng) / ((tB - tA) / 1000.0)) * 3.6
+                    }
+                    spCandidates.add(Pair(i, speedKmh))
+                }
+            }
+
+            if (spCandidates.isNotEmpty()) {
+                val flightCandidates = spCandidates.filter { it.second >= 5.0 }
+                val chosen = flightCandidates.lastOrNull() ?: spCandidates.first()
+                spTraceIndex = chosen.first
             }
         }
 
@@ -698,8 +749,9 @@ object GeometryUtils {
             val pCur = traceLocal[i]
             val (sVal, dToCL) = getCenterlineS(pCur)
 
-            // Centerline reverse progress check
-            if (dToCL <= half + 20.0) {
+            val isInside = dToCL <= half
+
+            if (isInside) {
                 if (insideCount == 0) {
                     maxS = sVal
                 } else {
@@ -716,50 +768,53 @@ object GeometryUtils {
                     }
                 }
                 insideCount++
-            }
 
-            // 3-point angle check
-            if (i >= 1 && i + 1 < traceLocal.size && dToCL <= half) {
-                val pPrev = traceLocal[i - 1]
-                val pNext = traceLocal[i + 1]
+                // 3-point angle check strictly INSIDE corridor
+                if (i >= 1 && i + 1 < traceLocal.size) {
+                    val pPrev = traceLocal[i - 1]
+                    val pNext = traceLocal[i + 1]
 
-                val v1 = Point2D(pCur.x - pPrev.x, pCur.y - pPrev.y)
-                val v2 = Point2D(pNext.x - pCur.x, pNext.y - pCur.y)
-                val l1 = hypot(v1.x, v1.y)
-                val l2 = hypot(v2.x, v2.y)
+                    val v1 = Point2D(pCur.x - pPrev.x, pCur.y - pPrev.y)
+                    val v2 = Point2D(pNext.x - pCur.x, pNext.y - pCur.y)
+                    val l1 = hypot(v1.x, v1.y)
+                    val l2 = hypot(v2.x, v2.y)
 
-                if (l1 >= 8.0 && l2 >= 8.0) {
-                    val cosInterior = -(v1.x * v2.x + v1.y * v2.y) / (l1 * l2)
-                    if (cosInterior > thresholdCos) {
-                        val loc = LatLng(trace[i].lat, trace[i].lng)
-                        return BacktrackResult(
-                            hasBacktrack = true,
-                            location = loc,
-                            description = "Demi-tour / Angle aigu dans le couloir (< ${thresholdDeg.toInt()}°)"
-                        )
-                    }
-                }
-
-                // Windowed check for smooth U-turns (looking 3 points back and 3 points forward)
-                if (i >= 3 && i + 3 < traceLocal.size) {
-                    val pPrevWin = traceLocal[i - 3]
-                    val pNextWin = traceLocal[i + 3]
-                    val vw1 = Point2D(pCur.x - pPrevWin.x, pCur.y - pPrevWin.y)
-                    val vw2 = Point2D(pNextWin.x - pCur.x, pNextWin.y - pCur.y)
-                    val lw1 = hypot(vw1.x, vw1.y)
-                    val lw2 = hypot(vw2.x, vw2.y)
-                    if (lw1 >= 15.0 && lw2 >= 15.0) {
-                        val cosWin = -(vw1.x * vw2.x + vw1.y * vw2.y) / (lw1 * lw2)
-                        if (cosWin > cos(toRad(110.0))) {
+                    if (l1 >= 8.0 && l2 >= 8.0) {
+                        val cosInterior = -(v1.x * v2.x + v1.y * v2.y) / (l1 * l2)
+                        if (cosInterior > thresholdCos) {
                             val loc = LatLng(trace[i].lat, trace[i].lng)
                             return BacktrackResult(
                                 hasBacktrack = true,
                                 location = loc,
-                                description = "Demi-tour / Virage en boucle dans le couloir"
+                                description = "Demi-tour / Angle aigu dans le couloir (< ${thresholdDeg.toInt()}°)"
                             )
                         }
                     }
+
+                    // Windowed check for smooth U-turns inside corridor
+                    if (i >= 3 && i + 3 < traceLocal.size) {
+                        val pPrevWin = traceLocal[i - 3]
+                        val pNextWin = traceLocal[i + 3]
+                        val vw1 = Point2D(pCur.x - pPrevWin.x, pCur.y - pPrevWin.y)
+                        val vw2 = Point2D(pNextWin.x - pCur.x, pNextWin.y - pCur.y)
+                        val lw1 = hypot(vw1.x, vw1.y)
+                        val lw2 = hypot(vw2.x, vw2.y)
+                        if (lw1 >= 15.0 && lw2 >= 15.0) {
+                            val cosWin = -(vw1.x * vw2.x + vw1.y * vw2.y) / (lw1 * lw2)
+                            if (cosWin > cos(toRad(110.0))) {
+                                val loc = LatLng(trace[i].lat, trace[i].lng)
+                                return BacktrackResult(
+                                    hasBacktrack = true,
+                                    location = loc,
+                                    description = "Demi-tour / Virage en boucle dans le couloir"
+                                )
+                            }
+                        }
+                    }
                 }
+            } else {
+                // Outside corridor: reset inside state so turns made outside the corridor never trigger a backtrack fault
+                insideCount = 0
             }
         }
         return BacktrackResult(false)
@@ -825,18 +880,28 @@ object GeometryUtils {
                     val id = it.point.id.lowercase()
                     t != "sp" && id != "sp" && (t == "porte" || t == "cachee" || t == "balise")
                 }
-                val hCount = hidden.count { it.validated }
-                val nh = hidden.size.coerceAtLeast(1)
-                val qh = 400.0 * (hCount.toDouble() / nh)
-                var qv = 0.0
-                var sTxt = ""
-                if ((ref.tmin ?: 0.0) > 0 && dur != null) {
-                    qv = min(200.0, 200.0 * (ref.tmin!! / dur))
-                    sTxt = " · Vitesse : ${qv.roundToInt()}/200"
+                val corridorPct = (confStats?.pctTime ?: confStats?.pctDist ?: confStats?.pctPts ?: 0).toDouble()
+
+                if (hidden.isEmpty()) {
+                    score = 1000.0 * (corridorPct / 100.0)
+                    label = "Navigation imposée — % du parcours dans le couloir ($corridorPct%)"
+                    bannerTxt = "Conformité du couloir : ${corridorPct.toInt()}% (Score : ${score.roundToInt()}/1000 pts)"
+                } else {
+                    val hCount = hidden.count { it.validated }
+                    val nh = hidden.size.coerceAtLeast(1)
+                    val qGates = 400.0 * (hCount.toDouble() / nh)
+                    val qCorridor = 400.0 * (corridorPct / 100.0)
+                    var qSpeed = 0.0
+                    var sTxt = ""
+                    if ((ref.tmin ?: 0.0) > 0 && dur != null) {
+                        qSpeed = min(200.0, 200.0 * (ref.tmin!! / dur))
+                        sTxt = " · Vitesse : ${qSpeed.roundToInt()}/200"
+                    }
+                    val maxPossible = 400.0 + 400.0 + (if ((ref.tmin ?: 0.0) > 0) 200.0 else 0.0)
+                    score = (qGates + qCorridor + qSpeed) * (1000.0 / maxPossible)
+                    label = "Navigation imposée — Portes ($hCount/$nh) + Couloir (${corridorPct.toInt()}%)"
+                    bannerTxt = "Portes : $hCount/${hidden.size} · Couloir : ${corridorPct.toInt()}%$sTxt"
                 }
-                score = (qh + qv) * (1000.0 / 600.0)
-                label = "Navigation imposée — normalisé sur 1000 (portes cachées + vitesse)"
-                bannerTxt = "Portes franchies : $hCount/${hidden.size}.$sTxt"
             }
             EpreuveType.PRECISION -> {
                 val hidden = results.filter { 
