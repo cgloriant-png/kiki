@@ -443,22 +443,29 @@ fun MapCanvas(
             }
 
             // 5. Draw GPX Track
-            traceRaw?.let { pts ->
-                if (pts.size > 1) {
-                    val screenPts = pts.map { latLngToScreen(it.lat, it.lng) }
-                    for (i in 1 until screenPts.size) {
-                        drawLine(color = InkDim.copy(alpha = 0.4f), start = screenPts[i - 1], end = screenPts[i], strokeWidth = 1.5.dp.toPx())
-                    }
+            // If both traceCorrected and traceRaw exist, draw traceRaw underneath as a faint reference
+            if (traceCorrected != null && traceRaw != null && traceRaw.size > 1) {
+                val screenRaw = traceRaw.map { latLngToScreen(it.lat, it.lng) }
+                for (i in 1 until screenRaw.size) {
+                    drawLine(color = InkDim.copy(alpha = 0.35f), start = screenRaw[i - 1], end = screenRaw[i], strokeWidth = 1.5.dp.toPx())
                 }
             }
 
-            traceCorrected?.let { pts ->
+            val mainTrace = traceCorrected ?: traceRaw
+            mainTrace?.let { pts ->
                 if (pts.isNotEmpty()) {
                     val screenPts = pts.map { latLngToScreen(it.lat, it.lng) }
                     if (pts.size == 1) {
                         val pos = screenPts.first()
-                        drawCircle(color = GreenOk.copy(alpha = 0.3f), radius = 16.dp.toPx(), center = pos)
-                        drawCircle(color = GreenOk, radius = 8.dp.toPx(), center = pos)
+                        val cl = GeometryUtils.centerlineDenseGeo(courseData, origin)
+                        val clLocal = if (cl.size >= 2) cl.map { GeometryUtils.toXY(it, origin) } else null
+                        val half = courseData.corridorWidth / 2.0
+                        val ptLocal = GeometryUtils.toXY(LatLng(pts[0].lat, pts[0].lng), origin)
+                        val isInside = if (clLocal != null) GeometryUtils.distToPolyline(ptLocal, clLocal) <= half else true
+                        val col = if (isInside) Color(0xFF16A34A) else Color(0xFFDC2626)
+
+                        drawCircle(color = col.copy(alpha = 0.3f), radius = 16.dp.toPx(), center = pos)
+                        drawCircle(color = col, radius = 8.dp.toPx(), center = pos)
                         drawCircle(color = Color.White, radius = 8.dp.toPx(), center = pos, style = Stroke(width = 2.dp.toPx()))
                     } else {
                         val cl = GeometryUtils.centerlineDenseGeo(courseData, origin)
@@ -466,19 +473,43 @@ fun MapCanvas(
                         val half = courseData.corridorWidth / 2.0
                         val tl = pts.map { GeometryUtils.toXY(LatLng(it.lat, it.lng), origin) }
 
+                        val bgWidthPx = 5.5.dp.toPx()
+                        val fgWidthPx = 3.5.dp.toPx()
+
+                        // Dark outline pass for high contrast against IGN/OSM tiles
+                        for (i in 1 until screenPts.size) {
+                            drawLine(
+                                color = Color.Black.copy(alpha = 0.35f),
+                                start = screenPts[i - 1],
+                                end = screenPts[i],
+                                strokeWidth = bgWidthPx
+                            )
+                        }
+
+                        // Colored pass: Green inside corridor, Red outside corridor
                         for (i in 1 until screenPts.size) {
                             var inside = true
                             if (clLocal != null) {
-                                inside = GeometryUtils.distToPolyline(tl[i - 1], clLocal) <= half && GeometryUtils.distToPolyline(tl[i], clLocal) <= half
+                                val p1Inside = GeometryUtils.distToPolyline(tl[i - 1], clLocal) <= half
+                                val p2Inside = GeometryUtils.distToPolyline(tl[i], clLocal) <= half
+                                inside = p1Inside && p2Inside
                             }
-                            val color = if (inside) GreenOk else RedAlert
-                            drawLine(color = color, start = screenPts[i - 1], end = screenPts[i], strokeWidth = 3.5.dp.toPx())
+                            val color = if (inside) Color(0xFF16A34A) else Color(0xFFDC2626)
+                            drawLine(
+                                color = color,
+                                start = screenPts[i - 1],
+                                end = screenPts[i],
+                                strokeWidth = fgWidthPx
+                            )
                         }
 
-                        // Draw live current position marker on the last point
+                        // Draw live current position / endpoint marker on the last point
                         val lastPos = screenPts.last()
-                        drawCircle(color = GreenOk.copy(alpha = 0.35f), radius = 14.dp.toPx(), center = lastPos)
-                        drawCircle(color = GreenOk, radius = 7.dp.toPx(), center = lastPos)
+                        val lastInside = if (clLocal != null && tl.isNotEmpty()) GeometryUtils.distToPolyline(tl.last(), clLocal) <= half else true
+                        val headColor = if (lastInside) Color(0xFF16A34A) else Color(0xFFDC2626)
+
+                        drawCircle(color = headColor.copy(alpha = 0.35f), radius = 14.dp.toPx(), center = lastPos)
+                        drawCircle(color = headColor, radius = 7.dp.toPx(), center = lastPos)
                         drawCircle(color = Color.White, radius = 7.dp.toPx(), center = lastPos, style = Stroke(width = 2.dp.toPx()))
                     }
                 }
@@ -563,6 +594,55 @@ fun MapCanvas(
 
         // Floating Map Controls (Layers, Zoom +, Zoom -, Recenter)
         var tileMenuExpanded by remember { mutableStateOf(false) }
+
+        // Trace Legend Indicator (if trace is present)
+        val activeTrace = traceCorrected ?: traceRaw
+        if (activeTrace != null && activeTrace.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 12.dp, top = 12.dp)
+                    .border(1.dp, BorderOutline, androidx.compose.foundation.shape.RoundedCornerShape(20.dp)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                color = HighDensitySurface.copy(alpha = 0.92f),
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(Color(0xFF16A34A), CircleShape)
+                        )
+                        Text("Dans couloir", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = HighDensityHeaderTitle)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(12.dp)
+                            .background(BorderOutline)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(Color(0xFFDC2626), CircleShape)
+                        )
+                        Text("Hors couloir", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = HighDensityHeaderTitle)
+                    }
+                }
+            }
+        }
 
         Column(
             modifier = Modifier
