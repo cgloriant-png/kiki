@@ -53,6 +53,8 @@ fun QuickFlightPanel(
     onDeclaredTimeChange: ((pointId: String, seconds: Double) -> Unit)? = null,
     onSwitchToMapClick: (() -> Unit)? = null,
     onFocusFaultClick: ((LatLng) -> Unit)? = null,
+    onShareGpxClick: (() -> Unit)? = null,
+    onShareHistoryGpxClick: ((FlightHistoryEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -624,6 +626,31 @@ fun QuickFlightPanel(
                                             color = Color.White
                                         )
                                     }
+
+                                    if (onShareGpxClick != null) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        OutlinedButton(
+                                            onClick = onShareGpxClick,
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = GreenSuccess),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, GreenSuccess),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Share,
+                                                contentDescription = null,
+                                                tint = GreenSuccess,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "📤 ENVOYER LA TRACE GPX À L'ORGANISATEUR",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = GreenSuccess
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -726,6 +753,20 @@ fun QuickFlightPanel(
                                                         )
                                                         Spacer(modifier = Modifier.width(4.dp))
                                                         Text("Voir", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+
+                                                    if (onShareHistoryGpxClick != null) {
+                                                        IconButton(
+                                                            onClick = { onShareHistoryGpxClick(item) },
+                                                            modifier = Modifier.size(32.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Share,
+                                                                contentDescription = "Partager GPX",
+                                                                tint = GreenSuccess,
+                                                                modifier = Modifier.size(18.dp)
+                                                            )
+                                                        }
                                                     }
 
                                                     // Delete correction to re-fly

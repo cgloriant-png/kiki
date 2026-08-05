@@ -26,7 +26,8 @@ fun TraceTab(
     onCleanOutliers: (Double) -> Unit,
     onApplySimplification: (Double) -> Unit,
     onResetTrace: () -> Unit,
-    onClearTrace: () -> Unit
+    onClearTrace: () -> Unit,
+    onExportGpxRequested: (() -> Unit)? = null
 ) {
     var maxSpeedInput by remember { mutableStateOf("65") }
     var lissageSlider by remember { mutableFloatStateOf(8f) }
@@ -189,6 +190,18 @@ fun TraceTab(
                         StatRow("Durée", GeometryUtils.fmtDur(GeometryUtils.totalDurationSeconds(traceCorrected)))
 
                         Spacer(modifier = Modifier.height(4.dp))
+                        if (onExportGpxRequested != null) {
+                            Button(
+                                onClick = onExportGpxRequested,
+                                colors = ButtonDefaults.buttonColors(containerColor = GreenOk, contentColor = DarkBg),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("📤 Exporter / Partager la trace (.gpx)", fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
                         Button(
                             onClick = onClearTrace,
                             colors = ButtonDefaults.buttonColors(containerColor = RedAlert),

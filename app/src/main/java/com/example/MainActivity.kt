@@ -250,6 +250,22 @@ class MainActivity : ComponentActivity() {
                                     onFocusFaultClick = { loc ->
                                         viewModel.focusOnMapLocation(loc)
                                         selectedTab = 1
+                                    },
+                                    onShareGpxClick = {
+                                        val trace = traceCorrected ?: traceRaw
+                                        if (!trace.isNullOrEmpty()) {
+                                            shareTraceGpx(trace, courseData.name.ifBlank { "Vol" })
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "Aucune trace de vol disponible !", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onShareHistoryGpxClick = { item ->
+                                        if (!item.traceJson.isNullOrBlank()) {
+                                            val pts = com.example.util.JsonExportUtils.deserializeTrace(item.traceJson)
+                                            shareTraceGpx(pts, "Vol ${item.epreuveType} (${item.dateIso})")
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "Aucune trace disponible pour ce vol historique", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 )
                             }
@@ -444,6 +460,40 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    private fun shareTraceGpx(points: List<com.example.data.model.GpxPoint>, title: String) {
+        if (points.isEmpty()) {
+            Toast.makeText(this, "Aucune trace à exporter", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val gpxXml = com.example.util.GpxParser.exportGpx(points, title)
+            val filename = "vol_paramoteur_${System.currentTimeMillis()}.gpx"
+            val cacheFile = java.io.File(cacheDir, filename)
+            cacheFile.writeText(gpxXml)
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                cacheFile
+            )
+
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/gpx+xml"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "Trace GPX Paramoteur - $title")
+                putExtra(
+                    Intent.EXTRA_TEXT,
+                    "Voici ma trace de vol enregistrée au format GPX pour la vérification par l'organisateur.\n\nFichier: $filename"
+                )
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(intent, "Envoyer la trace GPX à l'organisateur"))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Erreur lors du partage GPX: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
 }

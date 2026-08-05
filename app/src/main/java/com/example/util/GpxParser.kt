@@ -85,4 +85,34 @@ object GpxParser {
             null
         }
     }
+
+    fun exportGpx(points: List<GpxPoint>, trackName: String = "Vol Paramoteur"): String {
+        val sb = StringBuilder()
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        sb.append("<gpx version=\"1.1\" creator=\"Paramoteur App\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+        sb.append("  <trk>\n")
+        sb.append("    <name>").append(trackName).append("</name>\n")
+        sb.append("    <trkseg>\n")
+
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+
+        for (pt in points) {
+            sb.append("      <trkpt lat=\"").append(pt.lat).append("\" lon=\"").append(pt.lng).append("\">\n")
+            if (pt.ele != null) {
+                sb.append("        <ele>").append(pt.ele).append("</ele>\n")
+            }
+            if (pt.time != null) {
+                val formattedTime = dateFormat.format(java.util.Date(pt.time))
+                sb.append("        <time>").append(formattedTime).append("</time>\n")
+            }
+            sb.append("      </trkpt>\n")
+        }
+
+        sb.append("    </trkseg>\n")
+        sb.append("  </trk>\n")
+        sb.append("</gpx>")
+        return sb.toString()
+    }
 }
