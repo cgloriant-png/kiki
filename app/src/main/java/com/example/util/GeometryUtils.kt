@@ -177,11 +177,13 @@ object GeometryUtils {
         return indices.map { points[it] }
     }
 
-    fun removeOutliers(points: List<GpxPoint>, maxKmh: Double = 180.0): List<GpxPoint> {
+    fun removeOutliers(points: List<GpxPoint>, maxKmh: Double = 110.0): List<GpxPoint> {
         if (points.size < 3) return points.toList()
 
         var currentList = points.filter { p -> (p.lat != 0.0 || p.lng != 0.0) && abs(p.lat) <= 90.0 && abs(p.lng) <= 180.0 }
         if (currentList.size < 3) return currentList
+
+        val maxAllowedSpeed = if (maxKmh > 0) maxKmh else 110.0
 
         // Remove initial aberrant points (early GPS fix jumps before lock)
         while (currentList.size >= 3) {
@@ -194,15 +196,15 @@ object GeometryUtils {
                 val dt = (p1.time - p0.time) / 1000.0
                 if (dt > 0) {
                     val speed01 = (haversine(p0.lat, p0.lng, p1.lat, p1.lng) / dt) * 3.6
-                    if (speed01 > maxKmh) isP0Spike = true
+                    if (speed01 > maxAllowedSpeed) isP0Spike = true
                 } else if (dt == 0.0) {
                     val dist01 = haversine(p0.lat, p0.lng, p1.lat, p1.lng)
-                    if (dist01 > 50.0) isP0Spike = true
+                    if (dist01 > 30.0) isP0Spike = true
                 }
             } else {
                 val dist01 = haversine(p0.lat, p0.lng, p1.lat, p1.lng)
                 val dist12 = haversine(p1.lat, p1.lng, p2.lat, p2.lng)
-                if (dist01 > 300.0 && dist12 < 100.0) isP0Spike = true
+                if (dist01 > 200.0 && dist12 < 100.0) isP0Spike = true
             }
 
             if (isP0Spike) {
@@ -237,7 +239,7 @@ object GeometryUtils {
                     val dt = (cur.time - prev.time) / 1000.0
                     if (dt > 0) {
                         val speedKmh = (haversine(prev.lat, prev.lng, cur.lat, cur.lng) / dt) * 3.6
-                        if (speedKmh > maxKmh) {
+                        if (speedKmh > maxAllowedSpeed) {
                             var resolved = false
                             for (lookahead in 1..4) {
                                 if (i + lookahead < currentList.size) {
@@ -246,7 +248,7 @@ object GeometryUtils {
                                         val dtNext = (candidateNext.time - prev.time) / 1000.0
                                         if (dtNext > 0) {
                                             val speedNext = (haversine(prev.lat, prev.lng, candidateNext.lat, candidateNext.lng) / dtNext) * 3.6
-                                            if (speedNext <= maxKmh) {
+                                            if (speedNext <= maxAllowedSpeed) {
                                                 isSpike = true
                                                 resolved = true
                                                 break
@@ -255,20 +257,79 @@ object GeometryUtils {
                                     }
                                 }
                             }
-                            if (!resolved && speedKmh > 250.0) {
+                            if (!resolved && speedKmh > 180.0) {
                                 isSpike = true
                             }
                         }
                     }
                 }
 
-                // 2. Check sharp geometric triangle spike (out and back jump)
+                // 2. Check sharp geometric triangle spike (out and back jump / lateral detour)
                 if (!isSpike && next != null) {
                     val d1 = haversine(prev.lat, prev.lng, cur.lat, cur.lng)
                     val d2 = haversine(cur.lat, cur.lng, next.lat, next.lng)
                     val dDirect = haversine(prev.lat, prev.lng, next.lat, next.lng)
-                    if (d1 > 50.0 && d2 > 50.0 && (d1 + d2) > 2.2 * dDirect) {
-                        isSpike = true
+
+                    if (d1 >= 3.0 && d2 >= 3.0) {
+                        if (dDirect < 1.5 && (d1 + d2) > 6.0) {
+                            isSpike = true
+                        } else if (dDirect >= 1.5) {
+                            val ratio = (d1 + d2) / dDirect
+
+                            val origin = LatLng(prev.lat, prev.lng)
+                            val pPrev = toXY(origin, origin)
+                            val pCur = toXY(LatLng(cur.lat, cur.lng), origin)
+                            val pNext = toXY(LatLng(next.lat, next.lng), origin)
+
+                            val dx = pNext.x - pPrev.x
+                            val dy = pNext.y - pPrev.y
+                            val len2 = dx * dx + dy * dy
+                            val perpDist = if (len2 > 1e-6) {
+                                val projT = (((pCur.x - pPrev.x) * dx + (pCur.y - pPrev.y) * dy) / len2).coerceIn(0.0, 1.0)
+                                val projX = pPrev.x + projT * dx
+                                val projY = pPrev.y + projT * dy
+                                hypot(pCur.x - projX, pCur.y - projY)
+                            } else {
+                                hypot(pCur.x, pCur.y)
+                            }
+
+                            if ((ratio > 1.45 && perpDist > 8.0) || ratio > 2.2 || perpDist > 30.0) {
+                                isSpike = true
+                            }
+                        }
+                    }
+                }
+
+                // 3. 2-Point consecutive lateral jump check
+                if (!isSpike && next != null && i + 2 < currentList.size) {
+                    val next2 = currentList[i + 2]
+                    val d1 = haversine(prev.lat, prev.lng, cur.lat, cur.lng)
+                    val d2 = haversine(cur.lat, cur.lng, next.lat, next.lng)
+                    val d3 = haversine(next.lat, next.lng, next2.lat, next2.lng)
+                    val dDirect2 = haversine(prev.lat, prev.lng, next2.lat, next2.lng)
+
+                    if (dDirect2 >= 2.0) {
+                        val ratio2 = (d1 + d2 + d3) / dDirect2
+                        val origin = LatLng(prev.lat, prev.lng)
+                        val pPrev = toXY(origin, origin)
+                        val pCur = toXY(LatLng(cur.lat, cur.lng), origin)
+                        val pNext2 = toXY(LatLng(next2.lat, next2.lng), origin)
+
+                        val dx = pNext2.x - pPrev.x
+                        val dy = pNext2.y - pPrev.y
+                        val len2 = dx * dx + dy * dy
+                        val perpDist = if (len2 > 1e-6) {
+                            val projT = (((pCur.x - pPrev.x) * dx + (pCur.y - pPrev.y) * dy) / len2).coerceIn(0.0, 1.0)
+                            val projX = pPrev.x + projT * dx
+                            val projY = pPrev.y + projT * dy
+                            hypot(pCur.x - projX, pCur.y - projY)
+                        } else {
+                            hypot(pCur.x, pCur.y)
+                        }
+
+                        if (ratio2 > 1.5 && perpDist > 10.0) {
+                            isSpike = true
+                        }
                     }
                 }
 

@@ -522,7 +522,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
             _traceCorrected.value = pointsToAnalyze
 
             if (pointsToAnalyze.size > 5) {
-                cleanOutliers(250.0)
+                cleanOutliers(110.0)
             }
 
             analyzeFlight(_courseData.value.epreuveType, _courseData.value.scoringRef, _declaredTimesMap.value)
@@ -560,7 +560,7 @@ class ParamoteurViewModel(application: Application) : AndroidViewModel(applicati
         val points = GpxParser.parse(inputStream)
         if (points.isNotEmpty()) {
             _traceRaw.value = points
-            _traceCorrected.value = GeometryUtils.removeOutliers(points, 180.0)
+            _traceCorrected.value = GeometryUtils.removeOutliers(points, 110.0)
             recalculateConformity()
         }
     }
