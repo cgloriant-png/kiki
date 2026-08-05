@@ -599,9 +599,28 @@ object GeometryUtils {
             }
 
             if (candidates.isNotEmpty()) {
-                val best = candidates.find { it.first >= lastGateTraceIndex }
-                    ?: (if (spTraceIndex != null) candidates.find { it.first >= spTraceIndex } else null)
-                    ?: candidates.first()
+                val isFp = p.type.equals("FP", true) || p.id.equals("FP", true) || p == courseData.points.lastOrNull()
+                val validCandidates = candidates.filter { it.first >= lastGateTraceIndex }
+
+                val best = if (isFp) {
+                    val farCandidates = validCandidates.filter { candidate ->
+                        var cumDist = 0.0
+                        val fromIdx = min(lastGateTraceIndex, candidate.first)
+                        val toIdx = max(lastGateTraceIndex, candidate.first)
+                        for (k in fromIdx + 1..toIdx) {
+                            cumDist += haversine(trace[k - 1].lat, trace[k - 1].lng, trace[k].lat, trace[k].lng)
+                        }
+                        cumDist > 50.0
+                    }
+                    farCandidates.lastOrNull()
+                        ?: validCandidates.lastOrNull()
+                        ?: (if (spTraceIndex != null) candidates.find { it.first >= spTraceIndex } else null)
+                        ?: candidates.last()
+                } else {
+                    validCandidates.firstOrNull()
+                        ?: (if (spTraceIndex != null) candidates.find { it.first >= spTraceIndex } else null)
+                        ?: candidates.first()
+                }
 
                 foundIdx = best.first
                 foundTime = best.second
@@ -678,9 +697,10 @@ object GeometryUtils {
             if (lastGate != null) {
                 var minDist = Double.MAX_VALUE
                 var bestIdx = trace.size - 1
-                for (i in startIdx until trace.size) {
+                val searchStart = if (trace.size - startIdx > 10) startIdx + 5 else startIdx
+                for (i in searchStart until trace.size) {
                     val d = haversine(trace[i].lat, trace[i].lng, lastGate.lat, lastGate.lng)
-                    if (d < minDist) {
+                    if (d <= minDist) {
                         minDist = d
                         bestIdx = i
                     }
