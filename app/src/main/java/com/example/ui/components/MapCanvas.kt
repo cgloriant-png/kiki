@@ -172,6 +172,33 @@ fun MapCanvas(
     val loadedTiles = remember { mutableStateMapOf<String, ImageBitmap>() }
     val pendingTiles = remember { mutableSetOf<String>() }
 
+    // Remembered course geometry transformations so we don't re-compute heavy polyline operations on every frame during pan/zoom
+    val origin = remember(courseData) { GeometryUtils.courseOrigin(courseData) }
+    val denseCl = remember(courseData, origin) { GeometryUtils.centerlineDenseGeo(courseData, origin) }
+    val clLocal = remember(courseData, origin, denseCl) {
+        if (denseCl.size >= 2) denseCl.map { GeometryUtils.toXY(it, origin) } else null
+    }
+    val bufferedLocal = remember(courseData, clLocal) {
+        if (clLocal != null) GeometryUtils.bufferPolyline(clLocal, courseData.corridorWidth / 2.0) else emptyList()
+    }
+    val polygonGeo = remember(courseData, origin, bufferedLocal) {
+        bufferedLocal.map { GeometryUtils.toLatLng(it, origin) }
+    }
+
+    // Precompute corridor inside/outside status for trace points
+    val mainTrace = traceCorrected ?: traceRaw
+    val tracePointInsideCorridor = remember(mainTrace, courseData, origin, clLocal) {
+        if (mainTrace == null || mainTrace.isEmpty()) emptyList()
+        else if (clLocal == null) List(mainTrace.size) { true }
+        else {
+            val half = courseData.corridorWidth / 2.0
+            mainTrace.map { p ->
+                val ptLocal = GeometryUtils.toXY(LatLng(p.lat, p.lng), origin)
+                GeometryUtils.distToPolyline(ptLocal, clLocal) <= half
+            }
+        }
+    }
+
     // Coordinate conversion functions
     fun latLngToScreen(lat: Double, lng: Double): Offset {
         val n = 2.0.pow(zoomLevel.toDouble())
@@ -210,14 +237,27 @@ fun MapCanvas(
                 .pointerInput(toolMode) {
                     if (toolMode == MapToolMode.NAVIGATE) {
                         detectTransformGestures { centroid, pan, zoom, _ ->
-                            if (zoom != 1f) {
-                                zoomLevel = (zoomLevel * zoom).coerceIn(4f, 18f)
-                            }
-                            if (pan != Offset.Zero) {
-                                val targetCenterScreen = Offset(canvasSize.width / 2f - pan.x, canvasSize.height / 2f - pan.y)
-                                val newCenter = screenToLatLng(targetCenterScreen)
-                                centerLat = newCenter.lat
-                                centerLng = newCenter.lng
+                            if (zoom != 1f || pan != Offset.Zero) {
+                                val focusPoint = screenToLatLng(centroid)
+                                val newZoom = (zoomLevel * zoom).coerceIn(4f, 18f)
+                                val targetScreen = centroid + pan
+
+                                zoomLevel = newZoom
+
+                                val n = 2.0.pow(newZoom.toDouble())
+                                val focusWorldX = (focusPoint.lng + 180.0) / 360.0 * n * 256.0
+                                val latRad = Math.toRadians(focusPoint.lat)
+                                val focusWorldY = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / Math.PI) / 2.0 * n * 256.0
+
+                                val newCenterWorldX = focusWorldX - (targetScreen.x - canvasSize.width / 2f)
+                                val newCenterWorldY = focusWorldY - (targetScreen.y - canvasSize.height / 2f)
+
+                                val newLng = newCenterWorldX / (n * 256.0) * 360.0 - 180.0
+                                val latRadCenter = atan(sinh(Math.PI * (1.0 - 2.0 * newCenterWorldY / (n * 256.0))))
+                                val newLat = Math.toDegrees(latRadCenter)
+
+                                centerLat = newLat
+                                centerLng = newLng
                             }
                         }
                     }
@@ -286,23 +326,28 @@ fun MapCanvas(
         ) {
             canvasSize = size
 
-            // 1. Draw Map Tiles
+            // 1. Draw Map Tiles with continuous zoom scaling
             val z = zoomLevel.toInt().coerceIn(1, tileProvider.maxZoom)
-            val numTiles = 2.0.pow(z.toDouble())
+            val zoomScale = 2.0.pow((zoomLevel - z).toDouble())
+            val tileSizePx = (256.0 * zoomScale).toFloat()
 
-            val centerWorldX = (centerLng + 180.0) / 360.0 * numTiles * 256.0
+            val numTilesAtZ = 2.0.pow(z.toDouble())
+            val centerWorldXAtZ = (centerLng + 180.0) / 360.0 * numTilesAtZ * tileSizePx
             val centerLatRad = Math.toRadians(centerLat)
-            val centerWorldY = (1.0 - ln(tan(centerLatRad) + 1.0 / cos(centerLatRad)) / Math.PI) / 2.0 * numTiles * 256.0
+            val centerWorldYAtZ = (1.0 - ln(tan(centerLatRad) + 1.0 / cos(centerLatRad)) / Math.PI) / 2.0 * numTilesAtZ * tileSizePx
 
-            val minWorldX = centerWorldX - size.width / 2f
-            val maxWorldX = centerWorldX + size.width / 2f
-            val minWorldY = centerWorldY - size.height / 2f
-            val maxWorldY = centerWorldY + size.height / 2f
+            val minWorldX = centerWorldXAtZ - size.width / 2f
+            val maxWorldX = centerWorldXAtZ + size.width / 2f
+            val minWorldY = centerWorldYAtZ - size.height / 2f
+            val maxWorldY = centerWorldYAtZ + size.height / 2f
 
-            val minTileX = floor(minWorldX / 256.0).toInt()
-            val maxTileX = floor(maxWorldX / 256.0).toInt()
-            val minTileY = floor(minWorldY / 256.0).toInt()
-            val maxTileY = floor(maxWorldY / 256.0).toInt()
+            val minTileX = floor(minWorldX / tileSizePx).toInt()
+            val maxTileX = floor(maxWorldX / tileSizePx).toInt()
+            val minTileY = floor(minWorldY / tileSizePx).toInt()
+            val maxTileY = floor(maxWorldY / tileSizePx).toInt()
+
+            val drawTileWidth = ceil(tileSizePx).toInt() + 1
+            val drawTileHeight = ceil(tileSizePx).toInt() + 1
 
             for (tileX in minTileX..maxTileX) {
                 for (tileY in minTileY..maxTileY) {
@@ -311,15 +356,15 @@ fun MapCanvas(
                         .replace("{x}", tileX.toString())
                         .replace("{y}", tileY.toString())
 
-                    val screenX = (tileX * 256.0 - minWorldX).toFloat()
-                    val screenY = (tileY * 256.0 - minWorldY).toFloat()
+                    val screenX = (tileX * tileSizePx - minWorldX).toFloat()
+                    val screenY = (tileY * tileSizePx - minWorldY).toFloat()
 
                     val bitmap = loadedTiles[tileUrl]
                     if (bitmap != null) {
                         drawImage(
                             image = bitmap,
-                            dstOffset = androidx.compose.ui.unit.IntOffset(screenX.toInt(), screenY.toInt()),
-                            dstSize = androidx.compose.ui.unit.IntSize(256, 256)
+                            dstOffset = androidx.compose.ui.unit.IntOffset(screenX.roundToInt(), screenY.roundToInt()),
+                            dstSize = androidx.compose.ui.unit.IntSize(drawTileWidth, drawTileHeight)
                         )
                     } else {
                         if (!pendingTiles.contains(tileUrl)) {
@@ -339,15 +384,8 @@ fun MapCanvas(
                 }
             }
 
-            val origin = GeometryUtils.courseOrigin(courseData)
-
             // 2. Draw Corridor
-            val denseCl = GeometryUtils.centerlineDenseGeo(courseData, origin)
             if (denseCl.size >= 2) {
-                val clLocal = denseCl.map { GeometryUtils.toXY(it, origin) }
-                val halfWidth = courseData.corridorWidth / 2.0
-                val bufferedLocal = GeometryUtils.bufferPolyline(clLocal, halfWidth)
-                val polygonGeo = bufferedLocal.map { GeometryUtils.toLatLng(it, origin) }
                 val screenPoly = polygonGeo.map { latLngToScreen(it.lat, it.lng) }
 
                 if (screenPoly.size > 2) {
@@ -451,28 +489,18 @@ fun MapCanvas(
                 }
             }
 
-            val mainTrace = traceCorrected ?: traceRaw
             mainTrace?.let { pts ->
                 if (pts.isNotEmpty()) {
                     val screenPts = pts.map { latLngToScreen(it.lat, it.lng) }
                     if (pts.size == 1) {
                         val pos = screenPts.first()
-                        val cl = GeometryUtils.centerlineDenseGeo(courseData, origin)
-                        val clLocal = if (cl.size >= 2) cl.map { GeometryUtils.toXY(it, origin) } else null
-                        val half = courseData.corridorWidth / 2.0
-                        val ptLocal = GeometryUtils.toXY(LatLng(pts[0].lat, pts[0].lng), origin)
-                        val isInside = if (clLocal != null) GeometryUtils.distToPolyline(ptLocal, clLocal) <= half else true
+                        val isInside = tracePointInsideCorridor.firstOrNull() ?: true
                         val col = if (isInside) Color(0xFF16A34A) else Color(0xFFDC2626)
 
                         drawCircle(color = col.copy(alpha = 0.3f), radius = 16.dp.toPx(), center = pos)
                         drawCircle(color = col, radius = 8.dp.toPx(), center = pos)
                         drawCircle(color = Color.White, radius = 8.dp.toPx(), center = pos, style = Stroke(width = 2.dp.toPx()))
                     } else {
-                        val cl = GeometryUtils.centerlineDenseGeo(courseData, origin)
-                        val clLocal = if (cl.size >= 2) cl.map { GeometryUtils.toXY(it, origin) } else null
-                        val half = courseData.corridorWidth / 2.0
-                        val tl = pts.map { GeometryUtils.toXY(LatLng(it.lat, it.lng), origin) }
-
                         val bgWidthPx = 5.5.dp.toPx()
                         val fgWidthPx = 3.5.dp.toPx()
 
@@ -488,12 +516,9 @@ fun MapCanvas(
 
                         // Colored pass: Green inside corridor, Red outside corridor
                         for (i in 1 until screenPts.size) {
-                            var inside = true
-                            if (clLocal != null) {
-                                val p1Inside = GeometryUtils.distToPolyline(tl[i - 1], clLocal) <= half
-                                val p2Inside = GeometryUtils.distToPolyline(tl[i], clLocal) <= half
-                                inside = p1Inside && p2Inside
-                            }
+                            val p1Inside = if (i - 1 < tracePointInsideCorridor.size) tracePointInsideCorridor[i - 1] else true
+                            val p2Inside = if (i < tracePointInsideCorridor.size) tracePointInsideCorridor[i] else true
+                            val inside = p1Inside && p2Inside
                             val color = if (inside) Color(0xFF16A34A) else Color(0xFFDC2626)
                             drawLine(
                                 color = color,
@@ -505,7 +530,7 @@ fun MapCanvas(
 
                         // Draw live current position / endpoint marker on the last point
                         val lastPos = screenPts.last()
-                        val lastInside = if (clLocal != null && tl.isNotEmpty()) GeometryUtils.distToPolyline(tl.last(), clLocal) <= half else true
+                        val lastInside = tracePointInsideCorridor.lastOrNull() ?: true
                         val headColor = if (lastInside) Color(0xFF16A34A) else Color(0xFFDC2626)
 
                         drawCircle(color = headColor.copy(alpha = 0.35f), radius = 14.dp.toPx(), center = lastPos)
