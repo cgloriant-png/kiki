@@ -29,6 +29,8 @@ fun GaugeHeader(
     onSelectCourse: (slug: String) -> Unit,
     onDeleteCourse: (slug: String) -> Unit,
     onImportJsonClick: () -> Unit,
+    onOpenLicenseAdmin: () -> Unit,
+    licenseStatusLabel: String? = null,
     pointsCount: Int,
     traceDistanceMeters: Double?,
     corridorPct: Int?,
@@ -214,10 +216,65 @@ fun GaugeHeader(
                                 onImportJsonClick()
                             }
                         )
+
+                        HorizontalDivider(color = BorderOutline, thickness = 1.dp)
+
+                        // Action: Security & License
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = PrimaryBlueDark,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Protection & Clés Pilotes",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = HighDensityHeaderTitle
+                                        )
+                                        if (!licenseStatusLabel.isNullOrBlank()) {
+                                            Text(
+                                                text = licenseStatusLabel,
+                                                fontSize = 10.sp,
+                                                color = SecondaryText
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            onClick = {
+                                dropdownExpanded = false
+                                onOpenLicenseAdmin()
+                            }
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // License / Security Quick Button
+                IconButton(
+                    onClick = onOpenLicenseAdmin,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(HighDensitySurface, RoundedCornerShape(10.dp))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = "Protection & Licences",
+                        tint = PrimaryBlueDark,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 // Import JSON Quick Button
                 Button(

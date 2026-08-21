@@ -16,6 +16,7 @@ val PrimaryBlueDark = Color(0xFF001F2A)
 val NeutralText = Color(0xFF191C1E)
 val SecondaryText = Color(0xFF40484C)
 val BorderOutline = Color(0xFFC1C7CE)
+val CardBorder = BorderOutline
 
 val RedAlertBg = Color(0xFFFFDAD6)
 val RedAlertText = Color(0xFFBA1A1A)

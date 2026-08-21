@@ -34,6 +34,7 @@ import com.example.ui.theme.*
 import com.example.ui.viewmodel.ParamoteurViewModel
 import com.example.util.GeometryUtils
 import com.example.util.LatLng
+import com.example.util.LicenseManager
 
 class MainActivity : ComponentActivity() {
 
@@ -56,7 +57,20 @@ class MainActivity : ComponentActivity() {
             ParamoteurTheme {
                 val context = LocalContext.current
 
-                // ViewModel State collections
+                // License / Security State
+                var licenseStatus by remember { mutableStateOf(LicenseManager.checkStatus(context)) }
+                var showLicenseAdminDialog by remember { mutableStateOf(false) }
+                var showMasterCodePromptDialog by remember { mutableStateOf(false) }
+                var masterPinInput by remember { mutableStateOf("") }
+
+                if (!licenseStatus.isActivated) {
+                    ActivationScreen(
+                        onActivated = {
+                            licenseStatus = LicenseManager.checkStatus(context)
+                        }
+                    )
+                } else {
+                    // ViewModel State collections
                 val courseData by viewModel.courseData.collectAsStateWithLifecycle()
                 val currentCourseSlug by viewModel.currentCourseSlug.collectAsStateWithLifecycle()
                 val savedCourses by viewModel.savedCourses.collectAsStateWithLifecycle()
@@ -171,6 +185,14 @@ class MainActivity : ComponentActivity() {
                             onSelectCourse = { slug -> viewModel.loadCourse(slug) },
                             onDeleteCourse = { slug -> viewModel.deleteCourse(slug) },
                             onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
+                            onOpenLicenseAdmin = {
+                                if (licenseStatus.isMasterDeveloper) {
+                                    showLicenseAdminDialog = true
+                                } else {
+                                    showMasterCodePromptDialog = true
+                                }
+                            },
+                            licenseStatusLabel = licenseStatus.licenseTypeLabel,
                             pointsCount = courseData.points.size,
                             traceDistanceMeters = (traceCorrected ?: traceRaw)?.let { GeometryUtils.totalDistance(it) },
                             corridorPct = conformity?.pctTime ?: conformity?.pctDist ?: conformity?.pctPts,
@@ -421,6 +443,70 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+
+                if (showLicenseAdminDialog) {
+                    LicenseAdminDialog(
+                        onDismiss = { showLicenseAdminDialog = false },
+                        onStatusChanged = {
+                            licenseStatus = LicenseManager.checkStatus(context)
+                        }
+                    )
+                }
+
+                if (showMasterCodePromptDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showMasterCodePromptDialog = false
+                            masterPinInput = ""
+                        },
+                        icon = { Icon(Icons.Default.Security, contentDescription = null, tint = PrimaryBlueDark) },
+                        title = { Text("Administration & Clés Pilotes", fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    "Entrez votre code concepteur/développeur pour accéder au générateur de clés et aux réglages de protection :",
+                                    fontSize = 13.sp,
+                                    color = SecondaryText
+                                )
+                                OutlinedTextField(
+                                    value = masterPinInput,
+                                    onValueChange = { masterPinInput = it },
+                                    label = { Text("Code Développeur") },
+                                    placeholder = { Text("PARAMASTER2026") },
+                                    singleLine = true,
+                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    val res = LicenseManager.activate(context, masterPinInput, "Concepteur Master")
+                                    if (res.first) {
+                                        showMasterCodePromptDialog = false
+                                        licenseStatus = LicenseManager.checkStatus(context)
+                                        showLicenseAdminDialog = true
+                                        Toast.makeText(context, "Mode Concepteur activé !", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Code développeur incorrect !", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text("Accéder")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                showMasterCodePromptDialog = false
+                                masterPinInput = ""
+                            }) {
+                                Text("Annuler")
+                            }
+                        }
+                    )
+                }
+            }
             }
         }
     }
