@@ -52,7 +52,7 @@ fun LicenseAdminDialog(
 
     fun shareKey(key: String, durationLabel: String) {
         val pilotInfo = if (targetPilotName.isNotBlank()) " pour $targetPilotName" else ""
-        val text = "Bonjour$pilotInfo,\nVoici votre clé d'activation pour l'application Paramoteur Compétition ($durationLabel) :\n\n$key\n\nBons vols !"
+        val text = "Bonjour$pilotInfo,\nVoici votre clé d'activation pour l'application Eagles Academy Paramoteur ($durationLabel) :\n\n$key\n\nBons vols !"
         val sendIntent = Intent().apply {
             action = Intent.ACTION_SEND
             putExtra(Intent.EXTRA_TEXT, text)

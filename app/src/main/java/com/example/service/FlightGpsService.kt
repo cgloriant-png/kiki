@@ -176,7 +176,7 @@ class FlightGpsService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("🚁 Vol Paramoteur en cours")
+            .setContentTitle("🦅 Eagles Academy - Vol en cours")
             .setContentText(content)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(pendingIntent)

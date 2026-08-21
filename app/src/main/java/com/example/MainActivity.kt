@@ -411,7 +411,7 @@ class MainActivity : ComponentActivity() {
                         text = {
                             Text(
                                 "Pour éviter que Android/Xiaomi/Samsung ne coupaient le GPS lors de la mise en veille (écran éteint) pendant le vol :\n\n" +
-                                "1. Désactivez l'économie de batterie pour Paramoteur ('Pas de restriction').\n" +
+                                "1. Désactivez l'économie de batterie pour Eagles Academy ('Pas de restriction').\n" +
                                 "2. Autorisez la localisation 'Toujours autoriser en arrière-plan'."
                             )
                         },
@@ -556,7 +556,7 @@ class MainActivity : ComponentActivity() {
         }
         try {
             val gpxXml = com.example.util.GpxParser.exportGpx(points, title)
-            val filename = "vol_paramoteur_${System.currentTimeMillis()}.gpx"
+            val filename = "vol_eagles_academy_${System.currentTimeMillis()}.gpx"
             val cacheFile = java.io.File(cacheDir, filename)
             cacheFile.writeText(gpxXml)
 
@@ -569,10 +569,10 @@ class MainActivity : ComponentActivity() {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/gpx+xml"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Trace GPX Paramoteur - $title")
+                putExtra(Intent.EXTRA_SUBJECT, "Trace GPX Eagles Academy - $title")
                 putExtra(
                     Intent.EXTRA_TEXT,
-                    "Voici ma trace de vol enregistrée au format GPX pour la vérification par l'organisateur.\n\nFichier: $filename"
+                    "Voici ma trace de vol Eagles Academy enregistrée au format GPX pour la vérification par l'organisateur.\n\nFichier: $filename"
                 )
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }

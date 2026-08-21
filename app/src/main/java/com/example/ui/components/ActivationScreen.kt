@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,9 +21,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -31,6 +35,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.theme.*
 import com.example.util.LicenseManager
 
@@ -62,7 +67,7 @@ fun ActivationScreen(
             action = Intent.ACTION_SEND
             putExtra(
                 Intent.EXTRA_TEXT,
-                "Bonjour, voici mon identifiant d'appareil pour activer l'application Paramoteur : $deviceId"
+                "Bonjour, voici mon identifiant d'appareil pour activer l'application Eagles Academy : $deviceId"
             )
             type = "text/plain"
         }
@@ -97,38 +102,35 @@ fun ActivationScreen(
         ) {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // App Icon & Shield Header
+            // Eagles Academy Logo
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(PrimaryBlueDark, PrimaryBlue)
-                        ),
-                        shape = CircleShape
-                    ),
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White)
+                    .padding(4.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Security,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(44.dp)
+                Image(
+                    painter = painterResource(id = R.drawable.img_eagles_logo_1787304896446),
+                    contentDescription = "Logo Eagles Academy",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = "PARAMOTEUR COMPÉTITION",
-                fontSize = 20.sp,
+                text = "EAGLES ACADEMY",
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Black,
                 color = HighDensityHeaderTitle,
                 letterSpacing = 1.sp
             )
 
             Text(
-                text = "Version Test Pilote - Accès Protégé",
+                text = "Paramoteur & Compétition - Accès Pilote",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = SecondaryText

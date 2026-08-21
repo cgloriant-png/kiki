@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,11 +13,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.ui.theme.*
 import com.example.util.GeometryUtils
 
@@ -45,8 +49,71 @@ fun GaugeHeader(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 8.dp)
+                .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)
         ) {
+            // Top Eagles Academy Brand Strip
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(7.dp),
+                        color = Color.White,
+                        shadowElevation = 1.dp,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.img_eagles_logo_1787304896446),
+                            contentDescription = "Logo Eagles Academy",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    Text(
+                        text = "EAGLES ACADEMY",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        color = HighDensityHeaderTitle,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+
+                if (!licenseStatusLabel.isNullOrBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = PrimaryBlue.copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, PrimaryBlue.copy(alpha = 0.35f)),
+                        modifier = Modifier.clickable { onOpenLicenseAdmin() }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VerifiedUser,
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = licenseStatusLabel,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlue
+                            )
+                        }
+                    }
+                }
+            }
+
             // Header Bar with Dropdown Selector for Saved Courses
             Row(
                 modifier = Modifier.fillMaxWidth(),
