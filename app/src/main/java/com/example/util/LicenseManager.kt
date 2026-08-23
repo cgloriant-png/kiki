@@ -248,6 +248,111 @@ object LicenseManager {
         return KeyValidationResult(true, expiryTimestampMs, "")
     }
 
+    data class IssuedLicense(
+        val id: String = UUID.randomUUID().toString(),
+        val pilotName: String,
+        val deviceId: String,
+        val durationLabel: String,
+        val durationDays: Int,
+        val generatedKey: String,
+        val issuedDateMs: Long,
+        val expiryDateMs: Long
+    ) {
+        val isExpired: Boolean get() = System.currentTimeMillis() > expiryDateMs
+        val daysRemaining: Int get() {
+            val now = System.currentTimeMillis()
+            if (now >= expiryDateMs) return 0
+            return (((expiryDateMs - now) / (1000L * 60 * 60 * 24))).toInt().coerceAtLeast(0) + 1
+        }
+    }
+
+    private const val KEY_ISSUED_LICENSES_JSON = "issued_licenses_json_list"
+
+    fun getIssuedLicenses(context: Context): List<IssuedLicense> {
+        val prefs = getPrefs(context)
+        val jsonStr = prefs.getString(KEY_ISSUED_LICENSES_JSON, null) ?: return emptyList()
+        val list = mutableListOf<IssuedLicense>()
+        try {
+            val jsonArray = org.json.JSONArray(jsonStr)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                list.add(
+                    IssuedLicense(
+                        id = obj.optString("id", UUID.randomUUID().toString()),
+                        pilotName = obj.optString("pilotName", "Pilote"),
+                        deviceId = obj.optString("deviceId", ""),
+                        durationLabel = obj.optString("durationLabel", ""),
+                        durationDays = obj.optInt("durationDays", 30),
+                        generatedKey = obj.optString("generatedKey", ""),
+                        issuedDateMs = obj.optLong("issuedDateMs", System.currentTimeMillis()),
+                        expiryDateMs = obj.optLong("expiryDateMs", 0L)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list.sortedByDescending { it.issuedDateMs }
+    }
+
+    fun recordIssuedLicense(
+        context: Context,
+        pilotName: String,
+        deviceId: String,
+        duration: LicenseDuration,
+        generatedKey: String
+    ): IssuedLicense {
+        val existing = getIssuedLicenses(context).toMutableList()
+        val cleanDevId = deviceId.trim().uppercase(Locale.ROOT)
+        val cleanName = if (pilotName.isNotBlank()) pilotName.trim() else "Pilote sans nom"
+        val validation = verifyKey(cleanDevId, generatedKey)
+        val expiryMs = if (validation.isValid) validation.expiryTimestampMs else System.currentTimeMillis() + (duration.days.toLong() * 24L * 60L * 60L * 1000L)
+
+        // If pilot with same deviceId already existed, update them or add new
+        val idx = existing.indexOfFirst { it.deviceId.equals(cleanDevId, ignoreCase = true) }
+        val newRecord = IssuedLicense(
+            id = if (idx >= 0) existing[idx].id else UUID.randomUUID().toString(),
+            pilotName = cleanName,
+            deviceId = cleanDevId,
+            durationLabel = duration.label,
+            durationDays = duration.days,
+            generatedKey = generatedKey,
+            issuedDateMs = System.currentTimeMillis(),
+            expiryDateMs = expiryMs
+        )
+
+        if (idx >= 0) {
+            existing[idx] = newRecord
+        } else {
+            existing.add(0, newRecord)
+        }
+
+        saveIssuedLicenses(context, existing)
+        return newRecord
+    }
+
+    fun deleteIssuedLicense(context: Context, id: String) {
+        val list = getIssuedLicenses(context).filter { it.id != id }
+        saveIssuedLicenses(context, list)
+    }
+
+    private fun saveIssuedLicenses(context: Context, list: List<IssuedLicense>) {
+        val jsonArray = org.json.JSONArray()
+        for (item in list) {
+            val obj = org.json.JSONObject()
+            obj.put("id", item.id)
+            obj.put("pilotName", item.pilotName)
+            obj.put("deviceId", item.deviceId)
+            obj.put("durationLabel", item.durationLabel)
+            obj.put("durationDays", item.durationDays)
+            obj.put("generatedKey", item.generatedKey)
+            obj.put("issuedDateMs", item.issuedDateMs)
+            obj.put("expiryDateMs", item.expiryDateMs)
+            jsonArray.put(obj)
+        }
+        getPrefs(context).edit().putString(KEY_ISSUED_LICENSES_JSON, jsonArray.toString()).apply()
+    }
+
     private fun sha256(input: String): String {
         val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(StandardCharsets.UTF_8))
         return bytes.joinToString("") { "%02x".format(it) }
