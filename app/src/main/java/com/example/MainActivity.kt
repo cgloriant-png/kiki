@@ -5,23 +5,16 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -29,16 +22,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.*
 import com.example.ui.components.*
 import com.example.ui.theme.*
-import com.example.ui.viewmodel.ParamoteurViewModel
-import com.example.util.GeometryUtils
-import com.example.util.LatLng
-import com.example.util.LicenseManager
+import com.example.ui.viewmodel.AppUserMode
+import com.example.ui.viewmodel.PlanningViewModel
 
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: ParamoteurViewModel by viewModels()
+    private val viewModel: PlanningViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,539 +39,409 @@ class MainActivity : ComponentActivity() {
         } catch (e: Throwable) {
             e.printStackTrace()
         }
-        try {
-            handleIncomingIntent(intent)
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
 
         setContent {
             ParamoteurTheme {
                 val context = LocalContext.current
 
-                // License / Security State
-                var licenseStatus by remember { mutableStateOf(LicenseManager.checkStatus(context)) }
-                var showLicenseAdminDialog by remember { mutableStateOf(false) }
-                var showMasterCodePromptDialog by remember { mutableStateOf(false) }
-                var masterPinInput by remember { mutableStateOf("") }
+                // State from ViewModel
+                val userMode by viewModel.userMode.collectAsStateWithLifecycle()
+                val currentStudent by viewModel.currentStudent.collectAsStateWithLifecycle()
+                val allStudents by viewModel.allStudents.collectAsStateWithLifecycle()
+                val slotsWithBookings by viewModel.slotsWithBookings.collectAsStateWithLifecycle()
+                val filteredSlots by viewModel.filteredSlots.collectAsStateWithLifecycle()
+                val filteredStudents by viewModel.filteredStudents.collectAsStateWithLifecycle()
 
-                if (!licenseStatus.isActivated) {
-                    ActivationScreen(
-                        onActivated = {
-                            licenseStatus = LicenseManager.checkStatus(context)
-                        }
-                    )
-                } else {
-                    // ViewModel State collections
-                val courseData by viewModel.courseData.collectAsStateWithLifecycle()
-                val currentCourseSlug by viewModel.currentCourseSlug.collectAsStateWithLifecycle()
-                val savedCourses by viewModel.savedCourses.collectAsStateWithLifecycle()
+                // Filter States
+                val selectedDateFilter by viewModel.selectedDateFilter.collectAsStateWithLifecycle()
+                val filterOnlyAvailable by viewModel.filterOnlyAvailable.collectAsStateWithLifecycle()
+                val filterLessonType by viewModel.filterLessonType.collectAsStateWithLifecycle()
+                val filterOnlyMyBookings by viewModel.filterOnlyMyBookings.collectAsStateWithLifecycle()
+                val studentSearchQuery by viewModel.studentSearchQuery.collectAsStateWithLifecycle()
+                val studentLevelFilter by viewModel.studentLevelFilter.collectAsStateWithLifecycle()
 
-                val traceRaw by viewModel.traceRaw.collectAsStateWithLifecycle()
-                val traceCorrected by viewModel.traceCorrected.collectAsStateWithLifecycle()
-                val conformity by viewModel.conformity.collectAsStateWithLifecycle()
+                // Dialog States
+                var showAddSlotDialog by remember { mutableStateOf(false) }
+                var slotToEdit by remember { mutableStateOf<LessonSlotEntity?>(null) }
+                var showAddStudentDialog by remember { mutableStateOf(false) }
+                var studentToEdit by remember { mutableStateOf<StudentEntity?>(null) }
+                var studentToViewDetail by remember { mutableStateOf<StudentEntity?>(null) }
+                var slotToInstructorEnroll by remember { mutableStateOf<SlotWithBookings?>(null) }
+                var slotToUpdateWeather by remember { mutableStateOf<LessonSlotEntity?>(null) }
+                var showWhatsAppShareDialog by remember { mutableStateOf(false) }
+                var whatsAppContent by remember { mutableStateOf("") }
 
-                val flightResult by viewModel.flightResult.collectAsStateWithLifecycle()
-                val flightHistory by viewModel.flightHistory.collectAsStateWithLifecycle()
+                // Navigation Bar Tab
+                var currentTab by remember { mutableIntStateOf(0) }
 
-                val tileProvider by viewModel.tileProvider.collectAsStateWithLifecycle()
+                // Snackbar Host State
+                val snackbarHostState = remember { SnackbarHostState() }
 
-                // GPS Recording state
-                val isRecordingGps by viewModel.isRecordingGps.collectAsStateWithLifecycle()
-                val recordedGpsCount by viewModel.recordedGpsCount.collectAsStateWithLifecycle()
-                val flightDurationSeconds by viewModel.flightDurationSeconds.collectAsStateWithLifecycle()
-                val currentSpeedKmh by viewModel.currentSpeedKmh.collectAsStateWithLifecycle()
-                val declaredTimesMap by viewModel.declaredTimesMap.collectAsStateWithLifecycle()
-                val mapFocusLocation by viewModel.mapFocusLocation.collectAsStateWithLifecycle()
-
-                // Set default mode to Navigate & IGN Map
+                // Collect Feedback Messages
                 LaunchedEffect(Unit) {
-                    viewModel.setToolMode(MapToolMode.NAVIGATE)
-                    viewModel.setTileProvider(MapTileProvider.IGN_PLAN)
-                }
-
-                var showBatteryDialog by remember { mutableStateOf(false) }
-
-                // Permission Launcher for GPS & Notifications
-                val locationPermissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestMultiplePermissions()
-                ) { permissions ->
-                    val granted = permissions[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                            permissions[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
-                    if (granted) {
-                        viewModel.startGpsRecording(context)
-                        Toast.makeText(context, "Enregistrement GPS du vol démarré en arrière-plan !", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Permission GPS requise pour enregistrer le vol", Toast.LENGTH_SHORT).show()
+                    viewModel.feedbackMessage.collect { message ->
+                        snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
                     }
                 }
-
-                fun proceedStartGps() {
-                    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
-                    val isIgnoringBattery = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                        powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
-                    } else true
-
-                    if (!isIgnoringBattery) {
-                        showBatteryDialog = true
-                    } else {
-                        viewModel.startGpsRecording(context)
-                        Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-                fun startFlightGps() {
-                    val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    val coarseGranted = androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
-                    if (fineGranted || coarseGranted) {
-                        proceedStartGps()
-                    } else {
-                        val permsToRequest = mutableListOf(
-                            android.Manifest.permission.ACCESS_FINE_LOCATION,
-                            android.Manifest.permission.ACCESS_COARSE_LOCATION
-                        )
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                            permsToRequest.add(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                        }
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                            permsToRequest.add(android.Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                        locationPermissionLauncher.launch(permsToRequest.toTypedArray())
-                    }
-                }
-
-                // Activity Launcher for Importing Course JSON
-                val importCourseJsonLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.GetContent()
-                ) { uri: Uri? ->
-                    uri?.let {
-                        try {
-                            contentResolver.openInputStream(it)?.use { stream ->
-                                val json = stream.bufferedReader().readText()
-                                viewModel.importCourseJson(json)
-                                Toast.makeText(context, "Épreuve importée et enregistrée !", Toast.LENGTH_SHORT).show()
-                            }
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Erreur import épreuve JSON", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-
-                var selectedTab by remember { mutableIntStateOf(0) }
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     contentWindowInsets = WindowInsets.safeDrawing,
+                    snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                     topBar = {
-                        GaugeHeader(
-                            courseName = courseData.name,
-                            savedCourses = savedCourses,
-                            currentCourseSlug = currentCourseSlug,
-                            onSelectCourse = { slug -> viewModel.loadCourse(slug) },
-                            onDeleteCourse = { slug -> viewModel.deleteCourse(slug) },
-                            onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
-                            onOpenLicenseAdmin = {
-                                if (licenseStatus.isMasterDeveloper) {
-                                    showLicenseAdminDialog = true
-                                } else {
-                                    showMasterCodePromptDialog = true
-                                }
+                        PlanningHeader(
+                            userMode = userMode,
+                            onUserModeChange = { mode -> viewModel.setUserMode(mode) },
+                            currentStudent = currentStudent,
+                            allStudents = allStudents,
+                            onSelectCurrentStudent = { s -> viewModel.setCurrentStudent(s) },
+                            onOpenWhatsAppShare = {
+                                whatsAppContent = viewModel.getWhatsAppText()
+                                showWhatsAppShareDialog = true
                             },
-                            licenseStatusLabel = licenseStatus.licenseTypeLabel,
-                            pointsCount = courseData.points.size,
-                            traceDistanceMeters = (traceCorrected ?: traceRaw)?.let { GeometryUtils.totalDistance(it) },
-                            corridorPct = conformity?.pctTime ?: conformity?.pctDist ?: conformity?.pctPts,
-                            flightScore = flightResult?.score
+                            onQuickGenerateWeekend = { viewModel.quickGenerateWeekendSlots() },
+                            onOpenAddSlot = {
+                                slotToEdit = null
+                                showAddSlotDialog = true
+                            },
+                            onOpenAddStudent = {
+                                studentToEdit = null
+                                showAddStudentDialog = true
+                            }
                         )
+                    },
+                    bottomBar = {
+                        NavigationBar(
+                            containerColor = HighDensitySurface,
+                            tonalElevation = 6.dp,
+                            modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+                        ) {
+                            NavigationBarItem(
+                                selected = currentTab == 0,
+                                onClick = { currentTab = 0 },
+                                icon = {
+                                    Icon(
+                                        if (currentTab == 0) Icons.Default.CalendarMonth else Icons.Outlined.CalendarMonth,
+                                        contentDescription = "Planning"
+                                    )
+                                },
+                                label = { Text("Planning", fontWeight = if (currentTab == 0) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = PrimaryBlue,
+                                    selectedTextColor = PrimaryBlue,
+                                    indicatorColor = PrimaryBlueContainer
+                                )
+                            )
+
+                            NavigationBarItem(
+                                selected = currentTab == 1,
+                                onClick = { currentTab = 1 },
+                                icon = {
+                                    BadgedBox(
+                                        badge = {
+                                            if (allStudents.isNotEmpty()) {
+                                                Badge { Text("${allStudents.size}") }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            if (currentTab == 1) Icons.Default.People else Icons.Outlined.People,
+                                            contentDescription = "Élèves"
+                                        )
+                                    }
+                                },
+                                label = { Text("Élèves", fontWeight = if (currentTab == 1) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = PrimaryBlue,
+                                    selectedTextColor = PrimaryBlue,
+                                    indicatorColor = PrimaryBlueContainer
+                                )
+                            )
+
+                            NavigationBarItem(
+                                selected = currentTab == 2,
+                                onClick = { currentTab = 2 },
+                                icon = {
+                                    Icon(
+                                        if (currentTab == 2) Icons.Default.Assessment else Icons.Outlined.Assessment,
+                                        contentDescription = "École"
+                                    )
+                                },
+                                label = { Text("Vols du Jour", fontWeight = if (currentTab == 2) FontWeight.Bold else FontWeight.Normal, fontSize = 11.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = PrimaryBlue,
+                                    selectedTextColor = PrimaryBlue,
+                                    indicatorColor = PrimaryBlueContainer
+                                )
+                            )
+                        }
+                    },
+                    floatingActionButton = {
+                        if (userMode == AppUserMode.INSTRUCTOR) {
+                            if (currentTab == 0) {
+                                ExtendedFloatingActionButton(
+                                    onClick = {
+                                        slotToEdit = null
+                                        showAddSlotDialog = true
+                                    },
+                                    containerColor = PrimaryBlue,
+                                    contentColor = Color.White,
+                                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Créer un Créneau", fontWeight = FontWeight.Bold)
+                                }
+                            } else if (currentTab == 1) {
+                                FloatingActionButton(
+                                    onClick = {
+                                        studentToEdit = null
+                                        showAddStudentDialog = true
+                                    },
+                                    containerColor = PrimaryBlue,
+                                    contentColor = Color.White
+                                ) {
+                                    Icon(Icons.Default.PersonAdd, contentDescription = "Ajouter un élève")
+                                }
+                            }
+                        }
                     }
                 ) { innerPadding ->
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
-                            .background(HighDensityBg)
                     ) {
-                        // Navigation Tabs (1. Données & Vol / 2. Carte Plein Écran)
-                        TabRow(
-                            selectedTabIndex = selectedTab,
-                            containerColor = HighDensitySurface,
-                            contentColor = PrimaryBlueDark
-                        ) {
-                            Tab(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(Icons.Default.Assignment, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Text("1. Données & Vol", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    }
+                        when (currentTab) {
+                            0 -> PlanningScreen(
+                                slots = filteredSlots,
+                                userMode = userMode,
+                                currentStudent = currentStudent,
+                                selectedDateFilter = selectedDateFilter,
+                                onDateFilterChange = { df -> viewModel.setDateFilter(df) },
+                                filterOnlyAvailable = filterOnlyAvailable,
+                                onToggleFilterOnlyAvailable = { viewModel.toggleFilterOnlyAvailable() },
+                                filterLessonType = filterLessonType,
+                                onLessonTypeFilterChange = { tf -> viewModel.setLessonTypeFilter(tf) },
+                                filterOnlyMyBookings = filterOnlyMyBookings,
+                                onToggleFilterOnlyMyBookings = { viewModel.toggleFilterOnlyMyBookings() },
+                                onToggleStudentEnrollment = { slot, student ->
+                                    viewModel.toggleStudentEnrollment(slot, student)
+                                },
+                                onOpenInstructorEnroll = { slotItem ->
+                                    slotToInstructorEnroll = slotItem
+                                },
+                                onInstructorUnenroll = { slotId, studentId ->
+                                    viewModel.instructorUnenroll(slotId, studentId)
+                                },
+                                onToggleAttendance = { bookingId, studentId, attended ->
+                                    viewModel.toggleAttendance(bookingId, studentId, attended)
+                                },
+                                onUpdateWeather = { slot ->
+                                    slotToUpdateWeather = slot
+                                },
+                                onEditSlot = { slot ->
+                                    slotToEdit = slot
+                                    showAddSlotDialog = true
+                                },
+                                onDeleteSlot = { slotId ->
+                                    viewModel.deleteSlot(slotId)
+                                },
+                                onSelectStudentToView = { student ->
+                                    studentToViewDetail = student
+                                },
+                                onOpenAddSlot = {
+                                    slotToEdit = null
+                                    showAddSlotDialog = true
+                                },
+                                onQuickGenerateWeekend = {
+                                    viewModel.quickGenerateWeekendSlots()
                                 }
                             )
-                            Tab(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Text("2. Carte Plein Écran", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    }
+
+                            1 -> StudentsScreen(
+                                students = filteredStudents,
+                                searchQuery = studentSearchQuery,
+                                onSearchQueryChange = { q -> viewModel.setStudentSearchQuery(q) },
+                                levelFilter = studentLevelFilter,
+                                onLevelFilterChange = { l -> viewModel.setStudentLevelFilter(l) },
+                                onOpenAddStudent = {
+                                    studentToEdit = null
+                                    showAddStudentDialog = true
+                                },
+                                onSelectStudent = { s ->
+                                    studentToViewDetail = s
+                                },
+                                onEditStudent = { s ->
+                                    studentToEdit = s
+                                    showAddStudentDialog = true
+                                },
+                                onDeleteStudent = { s ->
+                                    viewModel.deleteStudent(s)
                                 }
                             )
-                        }
 
-                        if (selectedTab == 0) {
-                            // PAGE 1: Données, Réglages et Commandes de Vol
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(bottom = 16.dp)
-                            ) {
-                                QuickFlightPanel(
-                                    courseData = courseData,
-                                    savedCourses = savedCourses,
-                                    currentCourseSlug = currentCourseSlug,
-                                    onSelectCourse = { slug -> viewModel.loadCourse(slug) },
-                                    onDeleteCourse = { slug -> viewModel.deleteCourse(slug) },
-                                    isRecordingGps = isRecordingGps,
-                                    recordedGpsCount = recordedGpsCount,
-                                    flightDurationSeconds = flightDurationSeconds,
-                                    currentSpeedKmh = currentSpeedKmh,
-                                    flightResult = flightResult,
-                                    flightHistory = flightHistory,
-                                    onImportJsonClick = { importCourseJsonLauncher.launch("*/*") },
-                                    onStartGpsClick = { startFlightGps() },
-                                    onStopGpsAndAnalyzeClick = { viewModel.stopGpsRecordingAndAnalyze(context) },
-                                    onResetFlightClick = { viewModel.clearTrace() },
-                                    onLoadHistoryItem = { item -> viewModel.loadHistoryFlight(item) },
-                                    onDeleteHistoryItem = { id -> viewModel.deleteHistoryFlight(id) },
-                                    declaredTimesMap = declaredTimesMap,
-                                    onDeclaredTimeChange = { ptId, sec -> viewModel.setDeclaredTime(ptId, sec) },
-                                    onSwitchToMapClick = { selectedTab = 1 },
-                                    onFocusFaultClick = { loc ->
-                                        viewModel.focusOnMapLocation(loc)
-                                        selectedTab = 1
-                                    },
-                                    onShareGpxClick = {
-                                        val trace = traceCorrected ?: traceRaw
-                                        if (!trace.isNullOrEmpty()) {
-                                            shareTraceGpx(trace, courseData.name.ifBlank { "Vol" })
-                                        } else {
-                                            Toast.makeText(this@MainActivity, "Aucune trace de vol disponible !", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    onShareHistoryGpxClick = { item ->
-                                        if (!item.traceJson.isNullOrBlank()) {
-                                            val pts = com.example.util.JsonExportUtils.deserializeTrace(item.traceJson)
-                                            shareTraceGpx(pts, "Vol ${item.epreuveType} (${item.dateIso})")
-                                        } else {
-                                            Toast.makeText(this@MainActivity, "Aucune trace disponible pour ce vol historique", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-                            }
-                        } else {
-                            // PAGE 2: Carte Plein Écran sans aucun masque
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                            ) {
-                                MapCanvas(
-                                    modifier = Modifier.fillMaxSize(),
-                                    courseData = courseData,
-                                    traceRaw = traceRaw,
-                                    traceCorrected = traceCorrected,
-                                    toolMode = MapToolMode.NAVIGATE,
-                                    addPointType = "balise",
-                                    tileProvider = tileProvider,
-                                    faultPoint = flightResult?.faultPoint,
-                                    faultDescription = flightResult?.faultDescription,
-                                    focusLocation = mapFocusLocation,
-                                    onPointAdded = { _, _, _ -> },
-                                    onVertexAdded = { _, _ -> },
-                                    onVerticesDrawn = { _ -> },
-                                    onVertexInserted = { _, _ -> },
-                                    onItemDeleted = { _, _ -> },
-                                    onSmoothToggled = { _, _ -> },
-                                    onSimulatedFlightDrawn = { _ -> },
-                                    onPointDragged = { _, _, _ -> },
-                                    onVertexDragged = { _, _, _ -> },
-                                    onTileProviderChanged = { provider -> viewModel.setTileProvider(provider) }
-                                )
-
-                                // Non-intrusive floating status bar over map
-                                Surface(
-                                    color = HighDensitySurface.copy(alpha = 0.92f),
-                                    shape = RoundedCornerShape(20.dp),
-                                    shadowElevation = 6.dp,
-                                    border = BorderStroke(1.dp, PrimaryBlueContainer),
-                                    modifier = Modifier
-                                        .align(Alignment.TopCenter)
-                                        .padding(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        if (isRecordingGps) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(10.dp)
-                                                    .background(RedAlert, CircleShape)
-                                            )
-                                            val min = flightDurationSeconds / 60
-                                            val sec = flightDurationSeconds % 60
-                                            Text(
-                                                text = String.format("%02d:%02d • %.0f km/h (%d pts)", min, sec, currentSpeedKmh, recordedGpsCount),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
-                                                color = HighDensityHeaderTitle
-                                            )
-                                            Button(
-                                                onClick = { viewModel.stopGpsRecordingAndAnalyze() },
-                                                colors = ButtonDefaults.buttonColors(containerColor = RedAlert),
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.height(32.dp)
-                                            ) {
-                                                Text("STOP", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                            }
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(10.dp)
-                                                    .background(GreenSuccess, CircleShape)
-                                            )
-                                            Text(
-                                                text = if (courseData.name.isBlank()) "Carte Libre" else "Épreuve: ${courseData.name}",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
-                                                color = HighDensityHeaderTitle,
-                                                maxLines = 1
-                                            )
-                                            Button(
-                                                onClick = { startFlightGps() },
-                                                colors = ButtonDefaults.buttonColors(containerColor = GreenSuccess),
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.height(32.dp)
-                                            ) {
-                                                Text("DÉBUTER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                            }
-                                        }
-
-                                        VerticalDivider(modifier = Modifier.height(18.dp), color = BorderOutline)
-
-                                        IconButton(
-                                            onClick = { selectedTab = 0 },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Assignment,
-                                                contentDescription = "Données",
-                                                tint = PrimaryBlueDark,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
+                            2 -> SchoolOverviewScreen(
+                                students = allStudents,
+                                slotsWithBookings = slotsWithBookings,
+                                onToggleAttendance = { bookingId, studentId, attended ->
+                                    viewModel.toggleAttendance(bookingId, studentId, attended)
+                                },
+                                onOpenWhatsAppShare = {
+                                    whatsAppContent = viewModel.getWhatsAppText()
+                                    showWhatsAppShareDialog = true
+                                },
+                                onQuickGenerateWeekend = {
+                                    viewModel.quickGenerateWeekendSlots()
+                                },
+                                onOpenAddSlot = {
+                                    slotToEdit = null
+                                    showAddSlotDialog = true
+                                },
+                                onOpenAddStudent = {
+                                    studentToEdit = null
+                                    showAddStudentDialog = true
+                                },
+                                onSelectStudent = { s ->
+                                    studentToViewDetail = s
                                 }
-                            }
+                            )
                         }
                     }
                 }
 
-                if (showBatteryDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showBatteryDialog = false },
-                        title = { Text("🔋 GPS en veille & batterie") },
-                        text = {
-                            Text(
-                                "Pour éviter que Android/Xiaomi/Samsung ne coupaient le GPS lors de la mise en veille (écran éteint) pendant le vol :\n\n" +
-                                "1. Désactivez l'économie de batterie pour Eagles Academy ('Pas de restriction').\n" +
-                                "2. Autorisez la localisation 'Toujours autoriser en arrière-plan'."
+                // Dialog: Add / Edit Slot
+                if (showAddSlotDialog) {
+                    AddEditSlotDialog(
+                        slotToEdit = slotToEdit,
+                        onDismiss = {
+                            showAddSlotDialog = false
+                            slotToEdit = null
+                        },
+                        onSave = { dateIso, startTime, endTime, title, lessonType, location, maxCapacity, weatherStatus, windInfo, instructorNotes ->
+                            if (slotToEdit == null) {
+                                viewModel.createSlot(
+                                    dateIso = dateIso,
+                                    startTime = startTime,
+                                    endTime = endTime,
+                                    title = title,
+                                    lessonType = lessonType,
+                                    location = location,
+                                    maxCapacity = maxCapacity,
+                                    weatherStatus = weatherStatus,
+                                    windInfo = windInfo,
+                                    instructorNotes = instructorNotes
+                                )
+                            } else {
+                                val updated = slotToEdit!!.copy(
+                                    dateIso = dateIso,
+                                    startTime = startTime,
+                                    endTime = endTime,
+                                    title = title,
+                                    lessonType = lessonType,
+                                    location = location,
+                                    maxCapacity = maxCapacity,
+                                    weatherStatus = weatherStatus,
+                                    windInfo = windInfo,
+                                    instructorNotes = instructorNotes
+                                )
+                                viewModel.updateSlot(updated)
+                            }
+                            showAddSlotDialog = false
+                            slotToEdit = null
+                        }
+                    )
+                }
+
+                // Dialog: Add / Edit Student
+                if (showAddStudentDialog) {
+                    AddEditStudentDialog(
+                        studentToEdit = studentToEdit,
+                        onDismiss = {
+                            showAddStudentDialog = false
+                            studentToEdit = null
+                        },
+                        onSave = { id, firstName, lastName, phone, email, level, equipment, notes ->
+                            viewModel.saveStudent(
+                                id = id,
+                                firstName = firstName,
+                                lastName = lastName,
+                                phone = phone,
+                                email = email,
+                                level = level,
+                                equipment = equipment,
+                                notes = notes
                             )
-                        },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                showBatteryDialog = false
-                                viewModel.startGpsRecording(context)
-                                Toast.makeText(context, "Enregistrement GPS du vol démarré !", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Text("Démarrer le Vol")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = {
-                                try {
-                                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                        data = Uri.parse("package:${context.packageName}")
-                                    }
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = Uri.parse("package:${context.packageName}")
-                                    }
-                                    context.startActivity(intent)
-                                }
-                            }) {
-                                Text("⚙️ Réglages Batterie")
-                            }
+                            showAddStudentDialog = false
+                            studentToEdit = null
                         }
                     )
                 }
 
-                if (showLicenseAdminDialog) {
-                    LicenseAdminDialog(
-                        onDismiss = { showLicenseAdminDialog = false },
-                        onStatusChanged = {
-                            licenseStatus = LicenseManager.checkStatus(context)
+                // Dialog: Instructor Enroll Student
+                slotToInstructorEnroll?.let { slotItem ->
+                    InstructorEnrollDialog(
+                        slotItem = slotItem,
+                        allStudents = allStudents,
+                        onDismiss = { slotToInstructorEnroll = null },
+                        onEnroll = { studentId, isWaitingList ->
+                            viewModel.instructorEnroll(slotItem.slot.id, studentId, isWaitingList)
+                            slotToInstructorEnroll = null
                         }
                     )
                 }
 
-                if (showMasterCodePromptDialog) {
-                    AlertDialog(
-                        onDismissRequest = {
-                            showMasterCodePromptDialog = false
-                            masterPinInput = ""
+                // Dialog: Update Slot Weather
+                slotToUpdateWeather?.let { slot ->
+                    WeatherUpdateDialog(
+                        slot = slot,
+                        onDismiss = { slotToUpdateWeather = null },
+                        onConfirm = { status, wind ->
+                            viewModel.setWeather(slot.id, status, wind)
+                            slotToUpdateWeather = null
+                        }
+                    )
+                }
+
+                // Dialog: WhatsApp Share
+                if (showWhatsAppShareDialog) {
+                    WhatsAppShareDialog(
+                        content = whatsAppContent,
+                        onDismiss = { showWhatsAppShareDialog = false }
+                    )
+                }
+
+                // Dialog: Student Detail Sheet
+                studentToViewDetail?.let { student ->
+                    StudentDetailDialog(
+                        student = student,
+                        allSlotsWithBookings = slotsWithBookings,
+                        onDismiss = { studentToViewDetail = null },
+                        onEdit = {
+                            studentToEdit = student
+                            studentToViewDetail = null
+                            showAddStudentDialog = true
                         },
-                        icon = { Icon(Icons.Default.Security, contentDescription = null, tint = PrimaryBlueDark) },
-                        title = { Text("Administration & Clés Pilotes", fontWeight = FontWeight.Bold) },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(
-                                    "Entrez votre code concepteur/développeur pour accéder au générateur de clés et aux réglages de protection :",
-                                    fontSize = 13.sp,
-                                    color = SecondaryText
-                                )
-                                OutlinedTextField(
-                                    value = masterPinInput,
-                                    onValueChange = { masterPinInput = it },
-                                    label = { Text("Code Développeur") },
-                                    placeholder = { Text("PARAMASTER2026") },
-                                    singleLine = true,
-                                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                        onCall = {
+                            val intent = Intent(Intent.ACTION_DIAL).apply {
+                                data = Uri.parse("tel:${student.phone.replace(" ", "")}")
+                            }
+                            try { context.startActivity(intent) } catch (e: Exception) {
+                                Toast.makeText(context, "Impossible de composer le numéro", Toast.LENGTH_SHORT).show()
                             }
                         },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    val res = LicenseManager.activate(context, masterPinInput, "Concepteur Master")
-                                    if (res.first) {
-                                        showMasterCodePromptDialog = false
-                                        licenseStatus = LicenseManager.checkStatus(context)
-                                        showLicenseAdminDialog = true
-                                        Toast.makeText(context, "Mode Concepteur activé !", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Code développeur incorrect !", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            ) {
-                                Text("Accéder")
+                        onWhatsApp = {
+                            val cleanNumber = student.phone.replace(" ", "").replace("^0".toRegex(), "33")
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("https://wa.me/$cleanNumber")
                             }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = {
-                                showMasterCodePromptDialog = false
-                                masterPinInput = ""
-                            }) {
-                                Text("Annuler")
+                            try { context.startActivity(intent) } catch (e: Exception) {
+                                Toast.makeText(context, "WhatsApp non disponible", Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
                 }
             }
-            }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleIncomingIntent(intent)
-    }
-
-    private fun handleIncomingIntent(intent: Intent?) {
-        if (intent == null) return
-        try {
-            val uri: Uri? = intent.data ?: try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    (intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
-                }
-            } catch (e: Throwable) {
-                null
-            }
-            uri?.let { u ->
-                contentResolver.openInputStream(u)?.use { stream ->
-                    val rawContent = stream.bufferedReader().readText().replace("\uFEFF", "").trim()
-                    if (rawContent.startsWith("{") || rawContent.startsWith("[")) {
-                        viewModel.importCourseJson(rawContent)
-                        Toast.makeText(this, "Épreuve JSON importée et enregistrée avec succès !", Toast.LENGTH_LONG).show()
-                    } else if (rawContent.contains("<gpx", ignoreCase = true)) {
-                        contentResolver.openInputStream(u)?.use { gpxStream ->
-                            viewModel.loadGpxFromStream(gpxStream)
-                            Toast.makeText(this, "Trace GPX importée !", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun shareTraceGpx(points: List<com.example.data.model.GpxPoint>, title: String) {
-        if (points.isEmpty()) {
-            Toast.makeText(this, "Aucune trace à exporter", Toast.LENGTH_SHORT).show()
-            return
-        }
-        try {
-            val gpxXml = com.example.util.GpxParser.exportGpx(points, title)
-            val filename = "vol_eagles_academy_${System.currentTimeMillis()}.gpx"
-            val cacheFile = java.io.File(cacheDir, filename)
-            cacheFile.writeText(gpxXml)
-
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                this,
-                "$packageName.fileprovider",
-                cacheFile
-            )
-
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/gpx+xml"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Trace GPX Eagles Academy - $title")
-                putExtra(
-                    Intent.EXTRA_TEXT,
-                    "Voici ma trace de vol Eagles Academy enregistrée au format GPX pour la vérification par l'organisateur.\n\nFichier: $filename"
-                )
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(intent, "Envoyer la trace GPX à l'organisateur"))
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(this, "Erreur lors du partage GPX: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
 }

@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Eagles Academy"
+rootProject.name = "Planning Paramoteur"
 
 include(":app")

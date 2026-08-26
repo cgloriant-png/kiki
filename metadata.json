@@ -1,6 +1,6 @@
 {
-  "name": "Eagles Academy",
-  "description": "Application officielle Eagles Academy pour la navigation, l'entraînement et la compétition de paramoteur.",
+  "name": "Planning Paramoteur",
+  "description": "Gestion des créneaux de vol, inscriptions et planning des élèves pour instructeur paramoteur.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
