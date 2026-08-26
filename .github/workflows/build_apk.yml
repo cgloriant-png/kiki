@@ -2,7 +2,6 @@ name: Build & Release Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 permissions:
@@ -15,13 +14,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Setup environment
@@ -33,10 +30,8 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Generate Wrapper & Build Debug APK
-        run: |
-          gradle wrapper --gradle-version 8.11.1
-          ./gradlew assembleDebug --no-daemon --stacktrace --info
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Prepare APK
         run: |
@@ -47,7 +42,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: release-${{ github.run_number }}
+          tag_name: v1.0.${{ github.run_number }}
           name: "Planning Paramoteur v1.0.${{ github.run_number }}"
           body: "Application prête à être installée sur votre smartphone Android. Téléchargez le fichier **Planning_Paramoteur.apk** ci-dessous."
           files: release-output/Planning_Paramoteur.apk
