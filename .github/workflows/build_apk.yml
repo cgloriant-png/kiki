@@ -33,31 +33,25 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Generate Wrapper & Build Debug APK
+        run: |
+          gradle wrapper --gradle-version 8.11.1
+          ./gradlew assembleDebug --no-daemon --stacktrace --info
 
-      - name: Prepare APK for Release
+      - name: Prepare APK
         run: |
           mkdir -p release-output
           cp app/build/outputs/apk/debug/app-debug.apk release-output/Planning_Paramoteur.apk
 
-      - name: Publish APK to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          TAG_NAME="v1.0.${{ github.run_number }}"
-          gh release create "$TAG_NAME" release-output/Planning_Paramoteur.apk \
-            --title "Planning Paramoteur $TAG_NAME" \
-            --notes "Téléchargez l'application **Planning_Paramoteur.apk** ci-dessous pour l'installer sur votre smartphone ou tablette Android." \
-            --latest || gh release upload "$TAG_NAME" release-output/Planning_Paramoteur.apk --clobber || true
-
-      - name: Upload Artifact (Fallback)
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
+      - name: Create Release and Upload APK
+        uses: softprops/action-gh-release@v2
+        if: success()
         with:
-          name: Planning_Paramoteur_APK
-          path: release-output/Planning_Paramoteur.apk
-          retention-days: 1
+          tag_name: release-${{ github.run_number }}
+          name: "Planning Paramoteur v1.0.${{ github.run_number }}"
+          body: "Application prête à être installée sur votre smartphone Android. Téléchargez le fichier **Planning_Paramoteur.apk** ci-dessous."
+          files: release-output/Planning_Paramoteur.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
